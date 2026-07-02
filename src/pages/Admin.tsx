@@ -99,6 +99,7 @@ export default function Admin() {
   const [thisMonthPresent, setThisMonthPresent] = useState<Record<string, number>>({})
 
   // Invite
+  const [inviteName, setInviteName] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteSending, setInviteSending] = useState(false)
   const [inviteResult, setInviteResult] = useState<{ type: 'success' | 'error', msg: string } | null>(null)
@@ -298,29 +299,40 @@ export default function Admin() {
     setInviteSending(true)
     setInviteResult(null)
     const targetEmail = inviteEmail.trim()
+    // Нэрийг оруулаагүй бол email-ийн @-с өмнөх хэсгийг түр нэр болгож ашиглана.
+    // (Хэрэв DB талд шинэ хэрэглэгч бүртгэгдэхэд full_name-г шаарддаг trigger байгаа бол
+    // нэргүй signUp 500 алдаа буцаадаг байсан тул үүнийг заавал дамжуулна.)
+    const targetName = inviteName.trim() || targetEmail.split('@')[0]
     try {
       const { error: signUpError } = await supabase.auth.signUp({
         email: targetEmail,
         password: 'TEMPORARY_PASSWORD_123_!!!',
-        options: { emailRedirectTo: `${window.location.origin}/set-password` }
+        options: {
+          emailRedirectTo: `${window.location.origin}/set-password`,
+          data: { full_name: targetName },
+        }
       })
       if (signUpError) {
-        if (signUpError.message.toLowerCase().includes('already')) {
+        const msg = signUpError.message || ''
+        if (msg.toLowerCase().includes('already')) {
           setInviteResult({ type: 'error', msg: `${targetEmail} хаяг аль хэдийн бүртгэлтэй байна.` })
-        } else if (signUpError.message.toLowerCase().includes('rate limit')) {
+        } else if (msg.toLowerCase().includes('rate limit')) {
           setInviteResult({ type: 'error', msg: 'И-мэйл лимит хэтэрсэн байна. Жаахан хүлээгээд дахин оролдоно уу.' })
+        } else if (msg.toLowerCase().includes('database')) {
+          setInviteResult({ type: 'error', msg: 'Бүртгэл үүсгэхэд серверийн алдаа гарлаа (database error saving new user). Supabase-ийн Auth Logs хэсгээс дэлгэрэнгүй шалтгааныг харна уу.' })
         } else {
-          setInviteResult({ type: 'error', msg: signUpError.message })
+          setInviteResult({ type: 'error', msg: msg || 'Урилга илгээхэд алдаа гарлаа.' })
         }
         setInviteSending(false)
         return
       }
       setInviteResult({ type: 'success', msg: `${targetEmail} хаягт бүртгэл үүслээ. Тэр хүн "Нэвтрэх" хуудаснаас "Нууц үг мартсан уу?" холбоосоор өөрийн нууц үгээ тохируулна.` })
       setInviteEmail('')
+      setInviteName('')
       fetchUsers()
     } catch (error: any) {
       console.error('Invite error:', error)
-      setInviteResult({ type: 'error', msg: error.message || 'Урилга илгээхэд алдаа гарлаа.' })
+      setInviteResult({ type: 'error', msg: error?.message || 'Урилга илгээхэд алдаа гарлаа.' })
     } finally {
       setInviteSending(false)
     }
@@ -547,9 +559,9 @@ export default function Admin() {
                           </div>
                         </td>
                         <td style={{ padding: '14px 16px' }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 10, background: u.role === 'admin' ? 'rgba(249,115,22,0.15)' : 'rgba(255,255,255,0.06)', color: u.role === 'admin' ? '#f97316' : '#9ca3af', border: `1px solid ${u.role === 'admin' ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.08)'}`, display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
-  {u.role === 'admin' ? '⚡ Admin' : '👤 User'}
-</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 10, background: u.role === 'admin' ? 'rgba(249,115,22,0.15)' : 'rgba(255,255,255,0.06)', color: u.role === 'admin' ? '#f97316' : '#9ca3af', border: `1px solid ${u.role === 'admin' ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.08)'}` }}>
+                            {u.role === 'admin' ? '⚡ Admin' : '👤 User'}
+                          </span>
                         </td>
                         <td style={{ padding: '14px 16px', color: '#e5e7eb', fontWeight: 600 }}>{limit} удаа</td>
                         <td style={{ padding: '14px 16px', fontWeight: 700, color: sc }}>{visits} удаа</td>
@@ -1206,10 +1218,13 @@ export default function Admin() {
                   <p style={{ margin: 0, fontSize: '0.8rem', color: '#9ca3af' }}>И-мэйл хаягаар урилга илгээнэ</p>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <input type="text" placeholder="Нэр (ж: Баатар Дорж)" value={inviteName} onChange={e => setInviteName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && sendInvite()}
+                  style={{ flex: '1 1 180px', background: 'rgba(5,8,18,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 16px', borderRadius: 10, fontSize: '0.9rem', outline: 'none' }} />
                 <input type="email" placeholder="Бүртгэл хийх и-мэйл хаяг" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && sendInvite()}
-                  style={{ flex: 1, background: 'rgba(5,8,18,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 16px', borderRadius: 10, fontSize: '0.9rem', outline: 'none' }} />
+                  style={{ flex: '2 1 240px', background: 'rgba(5,8,18,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 16px', borderRadius: 10, fontSize: '0.9rem', outline: 'none' }} />
                 <button onClick={sendInvite} disabled={inviteSending || !inviteEmail.trim()}
                   style={{ background: '#f97316', color: '#fff', padding: '10px 20px', borderRadius: 10, border: 'none', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.88rem', opacity: !inviteEmail.trim() ? 0.5 : 1 }}>
                   <Send size={15} />{inviteSending ? 'Илгээж...' : 'Урих'}
