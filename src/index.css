@@ -1,0 +1,1208 @@
+/* ─── Design Tokens ─────────────────────────────────────── */
+:root {
+  --navy: #0a0e1a;
+  --navy-mid: #131828;
+  --navy-card: #1a2035;
+  --orange: #f97316;
+  --orange-dim: #c2410c;
+  --white: #f8fafc;
+  --muted: #94a3b8;
+  --border: rgba(255,255,255,0.08);
+  --radius: 12px;
+  --radius-sm: 8px;
+
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--navy);
+  color: var(--white);
+  font-family: var(--font-body);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+.container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+/* ─── Navbar ─────────────────────────────────────────────── */
+.navbar {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(10,14,26,0.92);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+}
+.nav-container {
+  max-width: 1200px; margin: 0 auto;
+  display: flex; align-items: center; padding: 0 24px;
+  height: 64px; gap: 32px;
+}
+.nav-logo {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--white); text-decoration: none;
+  font-family: var(--font-display); font-size: 22px;
+  letter-spacing: 1px;
+}
+.nav-logo svg { color: var(--orange); }
+.nav-links.desktop { display: flex; gap: 4px; flex: 1; }
+.nav-link {
+  color: var(--muted); text-decoration: none;
+  padding: 8px 14px; border-radius: var(--radius-sm);
+  font-size: 14px; font-weight: 500;
+  transition: color .2s, background .2s;
+}
+.nav-link:hover { color: var(--white); background: rgba(255,255,255,.06); }
+.nav-link.active { color: var(--orange); background: rgba(249,115,22,.1); }
+.nav-actions.desktop { display: flex; align-items: center; gap: 10px; }
+.nav-btn-ghost {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--muted); background: none; border: none;
+  text-decoration: none; padding: 8px 14px;
+  border-radius: var(--radius-sm); font-size: 14px;
+  cursor: pointer; transition: color .2s;
+}
+.nav-btn-ghost:hover { color: var(--white); }
+.nav-btn-outline {
+  display: flex; align-items: center; gap: 6px;
+  background: none; border: 1px solid var(--border);
+  color: var(--muted); padding: 7px 14px;
+  border-radius: var(--radius-sm); font-size: 14px;
+  cursor: pointer; transition: all .2s;
+}
+.nav-btn-outline:hover { border-color: var(--orange); color: var(--orange); }
+.nav-btn-primary {
+  background: var(--orange); color: var(--white);
+  text-decoration: none; padding: 8px 18px;
+  border-radius: var(--radius-sm); font-size: 14px;
+  font-weight: 600; transition: background .2s;
+}
+.nav-btn-primary:hover { background: var(--orange-dim); }
+.hamburger { display: none; background: none; border: none; color: var(--white); cursor: pointer; margin-left: auto; }
+.mobile-menu {
+  display: flex; flex-direction: column;
+  background: var(--navy-mid); border-top: 1px solid var(--border);
+  padding: 12px;
+}
+.mobile-link {
+  color: var(--white); text-decoration: none; background: none; border: none;
+  padding: 12px 16px; border-radius: var(--radius-sm);
+  font-size: 15px; cursor: pointer; text-align: left;
+  transition: background .2s;
+}
+.mobile-link:hover { background: rgba(255,255,255,.06); }
+.mobile-link.highlight { color: var(--orange); font-weight: 600; }
+.mobile-link.logout { color: #ef4444; }
+.mobile-divider { border-top: 1px solid var(--border); margin: 8px 0; }
+
+/* ─── Hero ───────────────────────────────────────────────── */
+.page-home { }
+.hero {
+  position: relative; 
+  overflow: hidden;
+  min-height: 92vh; 
+  display: flex; 
+  align-items: center;
+  justify-content: center; /* Бүх агуулгыг голлуулах */
+  padding: 80px 24px;
+}
+
+.hero-bg {
+  position: absolute; inset: 0;
+  /* Градиентыг голд нь ирэхээр 50% 50% болгов */
+  background: radial-gradient(ellipse 80% 60% at 50% 50%, rgba(249,115,22,.12) 0%, transparent 70%),
+              linear-gradient(180deg, var(--navy) 0%, #0d1220 100%);
+}
+
+
+
+/* 3D Бөмбөг байрлах шинэ контейнер класс */
+.hero-3d-bg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  max-width: 650px;
+  height: 650px;
+  z-index: 1; /* Текстийн ард орох боловч background-ийн дээр байна */
+  pointer-events: auto; /* Хулганаар эргүүлж болохоор хэвээр үлдээх */
+}
+
+.hero-content {
+  position: relative; 
+  max-width: 800px;
+  margin: 0 auto; /* Голлуулах */
+  text-align: center; /* Бүх текстийг голлуулах */
+  z-index: 2; /* 3D бөмбөгнийхөө дээр гаргаж уншигдахуйц болгоно */
+  pointer-events: none; /* Текст дээр хулгана очиход 3D бөмбөг эргэхэд саад болохгүй */
+}
+
+/* Текст доторх товчлуурууд буцаад дарагддаг байх тохиргоо */
+.hero-cta { 
+  display: flex; 
+  gap: 16px; 
+  flex-wrap: wrap; 
+  justify-content: center; /* Товчлууруудыг голлуулах */
+  pointer-events: auto; 
+}
+
+.hero-eyebrow {
+  display: inline-flex; align-items: center; gap: 9px;
+  background: rgba(249,115,22,.15); color: var(--orange);
+  border: 1px solid rgba(249,115,22,.3);
+  padding: 5px 14px; border-radius: 20px;
+  font-size: 13px; font-weight: 600; letter-spacing: .5px;
+  text-transform: uppercase; margin-bottom: 28px;
+}
+
+.hero-title {
+  font-family: var(--font-display);
+  font-size: clamp(72px, 12vw, 140px);
+  line-height: 0.92;
+  letter-spacing: 2px;
+  color: var(--white);
+  margin-bottom: 28px;
+}
+.hero-title .accent { color: var(--orange); }
+
+.hero-sub {
+  font-size: 18px; color: var(--muted);
+  max-width: 580px; /* Текст голлох учраас өргөнийг нь ялимгүй сунгав */
+  margin: 0 auto 40px auto; 
+  line-height: 1.7;
+}
+
+/* ─── Buttons ────────────────────────────────────────────── */
+.btn-primary {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--orange); color: var(--white);
+  text-decoration: none; border: none;
+  padding: 14px 28px; border-radius: var(--radius-sm);
+  font-size: 15px; font-weight: 700;
+  cursor: pointer; transition: all .2s;
+  letter-spacing: .3px;
+}
+.btn-primary:hover { background: var(--orange-dim); transform: translateY(-1px); }
+.btn-primary:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+.btn-primary.full { width: 100%; justify-content: center; }
+.btn-primary.large { padding: 16px 40px; font-size: 17px; }
+.btn-ghost {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: transparent; color: var(--white);
+  text-decoration: none; border: 1px solid var(--border);
+  padding: 14px 28px; border-radius: var(--radius-sm);
+  font-size: 15px; font-weight: 600;
+  cursor: pointer; transition: all .2s;
+}
+.btn-ghost:hover { border-color: rgba(255,255,255,.25); background: rgba(255,255,255,.05); }
+
+/* ─── Stats strip ────────────────────────────────────────── */
+.stats-strip {
+  display: flex; justify-content: center;
+  gap: 0; border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--navy-mid);
+}
+.stat-item {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; padding: 32px 24px;
+  border-right: 1px solid var(--border);
+}
+.stat-item:last-child { border-right: none; }
+.stat-icon { color: var(--orange); margin-bottom: 8px; }
+.stat-value {
+  font-family: var(--font-display); font-size: 48px;
+  color: var(--white); line-height: 1;
+}
+.stat-label { font-size: 13px; color: var(--muted); margin-top: 4px; text-align: center; }
+
+/* ─── Features ───────────────────────────────────────────── */
+.section { padding: 80px 0; }
+.section-title {
+  font-family: var(--font-display); font-size: 42px;
+  color: var(--white); text-align: center;
+  margin-bottom: 48px; letter-spacing: 1px;
+}
+.feature-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
+}
+.feature-card {
+  background: var(--navy-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 32px;
+  transition: border-color .2s, transform .2s;
+}
+.feature-card:hover { border-color: rgba(249,115,22,.4); transform: translateY(-2px); }
+.feature-emoji { font-size: 36px; margin-bottom: 16px; }
+.feature-card h3 { font-size: 18px; font-weight: 700; margin-bottom: 10px; }
+.feature-card p { color: var(--muted); font-size: 14px; line-height: 1.7; }
+
+/* ─── CTA band ───────────────────────────────────────────── */
+.cta-band {
+  background: linear-gradient(135deg, rgba(249,115,22,.15) 0%, transparent 100%);
+  border-top: 1px solid rgba(249,115,22,.2);
+  padding: 80px 0; text-align: center;
+}
+.cta-band h2 { font-family: var(--font-display); font-size: 48px; margin-bottom: 12px; }
+.cta-band p { color: var(--muted); margin-bottom: 32px; font-size: 16px; }
+
+/* ─── Pages ──────────────────────────────────────────────── */
+.main-content { min-height: calc(100vh - 64px - 60px); }
+.page { padding: 60px 0; }
+.page-header { text-align: center; margin-bottom: 60px; }
+.eyebrow {
+  display: inline-block;
+  color: var(--orange); font-size: 12px;
+  font-weight: 700; letter-spacing: 2px;
+  text-transform: uppercase; margin-bottom: 12px;
+}
+.page-header h1 {
+  font-family: var(--font-display); font-size: 56px;
+  line-height: 1; margin-bottom: 16px;
+}
+.page-header p { color: var(--muted); font-size: 17px; max-width: 500px; margin: 0 auto; }
+
+/* ─── About ──────────────────────────────────────────────── */
+/* ─── About Accordion (Ultra Premium Cascade Design) ───────── */
+:root {
+  --gold-glow: rgba(249, 115, 22, 0.15);
+  --gold-bright: #f97316;
+  --gold-gradient: linear-gradient(135deg, #f97316 0%, #b45309 100%);
+  --dark-glass: linear-gradient(135deg, rgba(20, 27, 47, 0.65) 0%, rgba(10, 14, 26, 0.85) 100%);
+}
+
+.about-accordion {
+  max-width: 820px;
+  margin: 40px auto;
+  padding-right: 80px; /* Баруун тийш шатлах зайг нөөцөлнө */
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* Ард талын алтлаг нарийн шугам (Зураг дээрх картуудыг холбосон гэрлэн урсгал) */
+.about-accordion::before {
+  content: '';
+  position: absolute;
+  top: 40px;
+  left: 68px;
+  width: 2px;
+  height: calc(100% - 80px);
+  background: linear-gradient(to bottom, transparent, rgba(249, 115, 22, 0.2), transparent);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.about-accordion-item {
+  position: relative;
+  background: var(--dark-glass);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 24px;
+  overflow: hidden;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  
+  /* Шилжилтүүдийг маш гөлгөр (Premium Feel) болгосон */
+  transition: 
+    border-color 0.4s cubic-bezier(0.25, 1, 0.5, 1), 
+    box-shadow 0.4s cubic-bezier(0.25, 1, 0.5, 1), 
+    margin 0.4s cubic-bezier(0.25, 1, 0.5, 1),
+    transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* 3D Шатлал (Cascade Offset) - Зураг дээрх шиг уусгах эффект */
+.about-accordion-item:nth-child(1) { margin: 0 72px 0 0; z-index: 1; }
+.about-accordion-item:nth-child(2) { margin: -25px 36px 0 36px; z-index: 2; }
+.about-accordion-item:nth-child(3) { margin: -25px 0 0 72px; z-index: 3; }
+
+/* Hover Эффект - Хулгана очиход гэрэлтэх */
+.about-accordion-item:hover {
+  transform: translateY(-2px);
+  border-color: rgba(249, 115, 22, 0.25);
+  box-shadow: 
+    0 15px 35px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(249, 115, 22, 0.05);
+}
+
+/* Идэвхтэй (Нээлттэй) карт - Бүх зүйлээс дээр тодорч харагдана */
+.about-accordion-item.open {
+  z-index: 10;
+  border-color: rgba(249, 115, 22, 0.5);
+  background: linear-gradient(135deg, rgba(26, 35, 61, 0.85) 0%, rgba(10, 14, 26, 0.95) 100%);
+  box-shadow: 
+    0 25px 50px -12px rgba(0, 0, 0, 0.6),
+    0 0 30px rgba(249, 115, 22, 0.15),
+    inset 0 1px 1px rgba(255, 255, 255, 0.1); /* Дээд талын нарийн гэрлэн ирмэг */
+}
+
+/* Карт нээгдэх үед дараагийн карт нь зөөлөн доошилж зай өгнө */
+.about-accordion-item.open + .about-accordion-item {
+  margin-top: 16px;
+}
+
+/* Толгой хэсэг */
+.about-accordion-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 24px 28px;
+  text-align: left;
+  color: #ffffff;
+}
+
+/* Алтлаг Иконы Хайрцаг */
+.about-accordion-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  background: rgba(249, 115, 22, 0.06);
+  border: 1px solid rgba(249, 115, 22, 0.2);
+  color: var(--gold-bright);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 10px rgba(249, 115, 22, 0.05);
+  transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* Hover үед икон зөөлөн эргэж тодорно */
+.about-accordion-header:hover .about-accordion-icon {
+  background: rgba(249, 115, 22, 0.12);
+  border-color: rgba(249, 115, 22, 0.4);
+  transform: rotate(15deg) scale(1.05);
+  box-shadow: 0 0 15px rgba(249, 115, 22, 0.2);
+}
+
+/* Нээлттэй үеийн икон (Алтан цул өнгө) */
+.about-accordion-item.open .about-accordion-icon {
+  background: var(--gold-gradient);
+  color: #ffffff;
+  border-color: transparent;
+  transform: rotate(0deg) scale(1.08);
+  box-shadow: 0 6px 20px rgba(249, 115, 22, 0.4);
+}
+
+/* Гарчиг Текст */
+.about-accordion-title {
+  flex: 1;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: color 0.3s ease;
+}
+
+.about-accordion-item.open .about-accordion-title {
+  color: #ffffff;
+  background: linear-gradient(to right, #ffffff, #ffe4d6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Сум (Chevron) */
+.about-accordion-chevron {
+  color: #6b7280;
+  display: flex;
+  flex-shrink: 0;
+  transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1), color 0.3s ease;
+}
+
+.about-accordion-header:hover .about-accordion-chevron {
+  color: #9ca3af;
+}
+
+.about-accordion-item.open .about-accordion-chevron {
+  transform: rotate(180deg);
+  color: var(--gold-bright);
+}
+
+/* Дэлгэгддэг бие хэсэг (Цэвэр CSS гөлгөр нээлт) */
+.about-accordion-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.about-accordion-item.open .about-accordion-body {
+  grid-template-rows: 1fr;
+}
+
+.about-accordion-body-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Доторх Текст */
+.about-accordion-body-inner p {
+  margin: 0 28px 26px 28px;
+  padding-top: 20px;
+  padding-left: 66px; /* Иконтой төгс эгнэнэ */
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  color: #a3aed0;
+  line-height: 1.8;
+  font-size: 15.5px;
+  letter-spacing: 0.1px;
+}
+
+/* ─── Гар утасны тохиргоо (Responsive) ───────── */
+@media (max-width: 768px) {
+  .about-accordion { 
+    padding-right: 0; 
+    gap: 14px;
+    margin: 20px auto;
+  }
+  .about-accordion::before {
+    display: none; /* Гар утас дээр холбоос шугамыг нууна */
+  }
+  .about-accordion-item:nth-child(1),
+  .about-accordion-item:nth-child(2),
+  .about-accordion-item:nth-child(3) {
+    margin: 0; /* Гар утас дээр халихаас сэргийлж энгийн болно */
+  }
+  .about-accordion-item.open + .about-accordion-item {
+    margin-top: 0;
+  }
+  .about-accordion-header { 
+    padding: 20px 22px; 
+    gap: 14px; 
+  }
+  .about-accordion-title { 
+    font-size: 18px; 
+  }
+  .about-accordion-body-inner p { 
+    padding-left: 0; 
+    margin: 0 22px 22px 22px; 
+    font-size: 14.5px;
+  }
+}
+/* ─── Team ───────────────────────────────────────────────── */
+./*
+  ЗАМ: Энэ блокыг таны глобал CSS файлын төгсгөлд (эсвэл "─── Responsive extras ───"
+  хэсгийн дараа) нэмж тавь. Одоо байгаа .team-grid-horizontal, .member-card-horizontal
+  гэх мэт классуудыг ЗАСАХГҮЙ, зөвхөн жижиг дэлгэц дээрх нэмэлт тааруулга нэмнэ.
+*/
+
+/* ─── Team — жижиг tablet (≤ 700px): картыг бүрэн эгнээ болгоно ─── */
+@media (max-width: 700px) {
+  .team-section-header-modern {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .filter-tabs-modern {
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 6px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+  .filter-tab-btn-modern {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+}
+
+/* ─── Team — утас (≤ 480px): card-ыг нягтруулж, текстийг жижигсгэнэ ─── */
+@media (max-width: 480px) {
+  .border-grid-box {
+    padding: 18px 14px;
+    border-radius: 14px;
+  }
+  .mt-32 { margin-top: 22px; }
+
+  .section-title-modern {
+    font-size: 22px;
+  }
+
+  .team-grid-horizontal,
+  .coaches-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .member-card-horizontal {
+    border-radius: 12px;
+  }
+
+  .avatar-side-box {
+    width: 72px;
+    padding: 12px 6px;
+    gap: 6px;
+  }
+  .avatar-circle-wrapper {
+    width: 46px;
+    height: 46px;
+  }
+  .card-number-tag {
+    font-size: 10px;
+    padding: 1px 6px;
+  }
+
+  .info-side-box {
+    padding: 12px 14px;
+  }
+  .member-name-text {
+    font-size: 13px;
+  }
+  .position-label-text,
+  .badge-pill-modern {
+    font-size: 10px;
+  }
+  .top-corner-number {
+    top: 8px;
+    right: 10px;
+    font-size: 16px;
+  }
+  .top-corner-icon-box {
+    top: 8px;
+    right: 10px;
+  }
+  .leader-badge-pill {
+    font-size: 10px;
+    padding: 2px 6px;
+  }
+
+  /* Хуудасны толгой хэсгийг ч жижигсгэнэ, зөвхөн Team-д хамаарахгүй
+  чир .page-header-д биш тусад нь нарийвчлан бичихийг зөвлөж байна.
+Хэрэв зөвхөн Team хуудсанд хамааруулах бол доорх шиг wrapper класс
+     нэмээд .team-page .page-header {...} гэж тодорхойлж болно. */
+}
+
+/* ─── Team — маш жижиг утас (≤ 360px) ─── */
+@media (max-width: 360px) {
+  .avatar-side-box { width: 60px; }
+  .avatar-circle-wrapper { width: 40px; height: 40px; }
+  .member-name-text { font-size: 12px; }
+}
+
+/* ─── Contact ────────────────────────────────────────────── */
+.contact-layout { display: grid; grid-template-columns: 1fr 1.5fr; gap: 60px; align-items: start; }
+.contact-info h2 { font-family: var(--font-display); font-size: 28px; margin-bottom: 28px; }
+.contact-item { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 24px; }
+.contact-icon {
+  width: 42px; height: 42px; border-radius: 10px;
+  background: rgba(249,115,22,.15); color: var(--orange);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.contact-label { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+.contact-item p { color: var(--white); font-size: 14px; margin-top: 2px; }
+.contact-form-wrap {
+  background: var(--navy-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 36px;
+}
+.success-msg { text-align: center; padding: 40px; }
+.success-msg span { font-size: 48px; color: #10b981; }
+.success-msg h3 { font-size: 22px; margin: 12px 0 8px; }
+.success-msg p { color: var(--muted); }
+
+.contact-item-link {
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.contact-item-link:hover {
+  opacity: 0.8;
+}
+
+/* ─── Forms ──────────────────────────────────────────────── */
+.contact-form, .auth-form { display: flex; flex-direction: column; gap: 20px; }
+.form-group { display: flex; flex-direction: column; gap: 8px; }
+.form-group label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.form-group input,
+.form-group textarea,
+.form-group select {
+  background: var(--navy-mid); border: 1px solid var(--border);
+  color: var(--white); padding: 12px 16px;
+  border-radius: var(--radius-sm); font-size: 14px;
+  font-family: var(--font-body);
+  transition: border-color .2s;
+  width: 100%;
+}
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+  outline: none; border-color: var(--orange);
+}
+.form-group input::placeholder, .form-group textarea::placeholder { color: #475569; }
+
+/* ─── Auth ───────────────────────────────────────────────── */
+.auth-page {
+  min-height: calc(100vh - 64px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 40px 24px;
+}
+.auth-card {
+  background: var(--navy-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 48px;
+  width: 100%; max-width: 440px;
+}
+.auth-logo {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 28px; font-family: var(--font-display);
+  font-size: 24px; color: var(--orange);
+}
+.auth-card h1 { font-family: var(--font-display); font-size: 36px; margin-bottom: 6px; }
+.auth-sub { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
+.auth-footer { text-align: center; font-size: 14px; color: var(--muted); margin-top: 20px; }
+.auth-footer a { color: var(--orange); text-decoration: none; font-weight: 600; }
+.error-msg {
+  background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3);
+  color: #ef4444; padding: 12px 16px; border-radius: var(--radius-sm);
+  font-size: 14px; margin-bottom: 16px;
+}
+
+/* ─── Schedule ───────────────────────────────────────────── */
+.schedule-header {
+  display: flex; justify-content: space-between;
+  align-items: flex-start; margin-bottom: 32px; flex-wrap: wrap; gap: 16px;
+}
+.schedule-user { color: var(--muted); font-size: 14px; margin-top: 4px; }
+.week-nav { display: flex; align-items: center; gap: 12px; }
+.week-btn {
+  background: var(--navy-card); border: 1px solid var(--border);
+  color: var(--white); width: 36px; height: 36px;
+  border-radius: var(--radius-sm); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color .2s;
+}
+.week-btn:hover { border-color: var(--orange); color: var(--orange); }
+.week-label { font-size: 14px; color: var(--muted); min-width: 120px; text-align: center; }
+
+.schedule-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  gap: 12px; margin-bottom: 32px;
+}
+.day-column {
+  background: var(--navy-card); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden; min-height: 200px;
+}
+.day-column.today { border-color: rgba(249,115,22,.5); }
+.day-header {
+  padding: 12px; border-bottom: 1px solid var(--border);
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.day-name { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.day-date { font-family: var(--font-display); font-size: 22px; line-height: 1; }
+.day-date.today-badge { color: var(--orange); }
+.day-slots { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.slot-card {
+  border-left: 3px solid; border-radius: var(--radius-sm);
+  padding: 10px; font-size: 12px;
+}
+.slot-type { font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+.slot-time, .slot-location {
+  display: flex; align-items: center; gap: 4px;
+  color: var(--muted); margin-top: 4px; font-size: 11px;
+}
+.slot-notes { color: var(--muted); font-size: 11px; margin-top: 4px; font-style: italic; }
+.empty-day { color: var(--muted); font-size: 12px; text-align: center; padding: 20px; }
+
+.legend { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+/* ─── Admin ──────────────────────────────────────────────── */
+.admin-page { }
+.admin-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin-bottom: 32px;
+}
+.admin-eyebrow { color: #ef4444; }
+.save-toast {
+  background: rgba(16,185,129,.15); border: 1px solid rgba(16,185,129,.4);
+  color: #10b981; padding: 10px 20px; border-radius: var(--radius-sm);
+  font-size: 14px; font-weight: 600;
+}
+.admin-layout { display: grid; grid-template-columns: 260px 1fr; gap: 24px; }
+.admin-sidebar {
+  background: var(--navy-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px; height: fit-content;
+}
+.sidebar-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 1px; color: var(--muted); padding: 0 8px 12px;
+  border-bottom: 1px solid var(--border); margin-bottom: 8px;
+}
+.user-btn {
+  width: 100%; text-align: left; background: none; border: none;
+  padding: 10px 12px; border-radius: var(--radius-sm);
+  cursor: pointer; color: var(--white); transition: background .2s;
+  margin-bottom: 4px;
+}
+.user-btn:hover { background: rgba(255,255,255,.05); }
+.user-btn.active { background: rgba(249,115,22,.15); border: 1px solid rgba(249,115,22,.3); }
+.user-btn-name { font-size: 14px; font-weight: 600; }
+.user-btn-email { font-size: 12px; color: var(--muted); }
+.no-users { color: var(--muted); font-size: 14px; padding: 12px; }
+.admin-main {
+  background: var(--navy-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 28px; min-height: 400px;
+}
+.select-user-prompt {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; height: 300px; color: var(--muted); gap: 16px;
+}
+.select-user-prompt svg { opacity: .3; }
+.editor-top {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 24px; flex-wrap: wrap; gap: 12px;
+}
+.editor-top h2 { font-size: 18px; font-weight: 700; }
+.editor-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin-bottom: 24px; }
+.editor-day {
+  background: var(--navy-mid); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); overflow: hidden;
+}
+.editor-day-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 10px; background: rgba(255,255,255,.04);
+  font-size: 12px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.add-slot-btn {
+  background: rgba(249,115,22,.2); border: none; color: var(--orange);
+  width: 22px; height: 22px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background .2s;
+}
+.add-slot-btn:hover { background: rgba(249,115,22,.4); }
+.editor-slot {
+  margin: 8px; border-left: 3px solid;
+  background: var(--navy-card); border-radius: var(--radius-sm);
+  padding: 8px; display: flex; flex-direction: column; gap: 6px;
+}
+.slot-row { display: flex; align-items: center; gap: 6px; }
+.slot-select {
+  flex: 1; background: var(--navy-mid); border: 1px solid var(--border);
+  color: inherit; padding: 4px 6px; border-radius: 6px;
+  font-size: 11px; font-weight: 700;
+}
+.slot-input {
+  background: var(--navy-mid); border: 1px solid var(--border);
+  color: var(--white); padding: 4px 8px;
+  border-radius: 6px; font-size: 11px;
+  font-family: var(--font-body);
+}
+.slot-input.full { width: 100%; }
+.slot-input:focus { outline: none; border-color: var(--orange); }
+.remove-btn {
+  background: rgba(239,68,68,.1); border: none; color: #ef4444;
+  padding: 4px; border-radius: 6px; cursor: pointer;
+  display: flex; align-items: center; transition: background .2s;
+}
+.remove-btn:hover { background: rgba(239,68,68,.25); }
+.empty-day-editor { color: var(--muted); font-size: 11px; text-align: center; padding: 12px 8px; }
+.editor-footer { display: flex; justify-content: flex-end; padding-top: 16px; border-top: 1px solid var(--border); }
+
+/* ─── Footer ─────────────────────────────────────────────── */
+.footer {
+  border-top: 1px solid var(--border);
+  padding: 20px 0; text-align: center;
+  color: var(--muted); font-size: 13px;
+}
+
+/* ─── Loading ────────────────────────────────────────────── */
+.loading-screen {
+  min-height: 60vh; display: flex;
+  align-items: center; justify-content: center;
+}
+.spinner {
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--orange);
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.loading-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+.skeleton-card {
+  background: var(--navy-card); border: 1px solid var(--border);
+  border-radius: var(--radius); height: 220px;
+  animation: pulse 1.5s ease infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+
+/* ─── Responsive ─────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .nav-links.desktop, .nav-actions.desktop { display: none; }
+  .hamburger { display: flex; }
+  .feature-grid { grid-template-columns: 1fr; }
+  .about-grid { grid-template-columns: 1fr; }
+  .contact-layout { grid-template-columns: 1fr; }
+  .schedule-grid { grid-template-columns: repeat(4, 1fr); }
+  .admin-layout { grid-template-columns: 1fr; }
+  .admin-sidebar { position: static; }
+  .editor-days { grid-template-columns: repeat(4, 1fr); }
+  .stats-strip { flex-wrap: wrap; }
+  .stat-item { flex: 1 1 33%; }
+}
+
+@media (max-width: 600px) {
+  .hero-title { font-size: 72px; }
+  .schedule-grid { grid-template-columns: repeat(2, 1fr); }
+  .editor-days { grid-template-columns: repeat(2, 1fr); }
+  .auth-card { padding: 32px 24px; }
+  .team-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ─── Team Modern Layout ─────────────────────────────────── */
+.team-page-layout-modern { display: flex; flex-direction: column; gap: 0; }
+.team-section-modern { }
+.border-grid-box {
+  background: rgba(20,27,47,0.45);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 18px; padding: 28px;
+}
+.mt-32 { margin-top: 32px; }
+.mt-4 { margin-top: 4px; }
+.team-section-header-modern {
+  display: flex; justify-content: space-between;
+  align-items: center; flex-wrap: wrap; gap: 12px;
+  margin-bottom: 24px;
+}
+.section-title-modern {
+  font-family: var(--font-display); font-size: 28px;
+  color: var(--white); letter-spacing: 1px; margin: 0;
+}
+.filter-tabs-modern { display: flex; gap: 8px; flex-wrap: wrap; }
+.filter-tab-btn-modern {
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+  color: var(--muted); padding: 6px 16px; border-radius: 20px;
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: all .2s;
+}
+.filter-tab-btn-modern:hover { color: var(--white); border-color: rgba(255,255,255,0.2); }
+.filter-tab-btn-modern.active {
+  background: rgba(249,115,22,0.15); border-color: rgba(249,115,22,0.4);
+  color: var(--orange);
+}
+.team-grid-horizontal {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+.coaches-row { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.member-card-horizontal {
+  display: flex; border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.07);
+  overflow: hidden; transition: transform .2s, border-color .2s;
+  background: rgba(10,14,26,0.5);
+}
+.member-card-horizontal:hover { transform: translateY(-2px); border-color: rgba(249,115,22,0.3); }
+.avatar-side-box {
+  width: 90px; flex-shrink: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 16px 8px; position: relative; gap: 8px;
+}
+.coach-avatar-bg { background: linear-gradient(to top, rgba(249,115,22,0.2), transparent); }
+.avatar-circle-wrapper {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden; border: 2px solid rgba(255,255,255,0.1);
+}
+.img-fit { width: 100%; height: 100%; object-fit: cover; }
+.user-placeholder-icon { color: var(--muted); }
+.card-number-tag {
+  font-size: 11px; font-weight: 800;
+  color: #fff; padding: 2px 8px; border-radius: 10px;
+}
+.info-side-box {
+  flex: 1; padding: 14px 16px;
+  display: flex; flex-direction: column;
+  justify-content: center; position: relative;
+}
+.top-corner-number {
+  position: absolute; top: 10px; right: 12px;
+  font-family: var(--font-display); font-size: 20px;
+  opacity: 0.3; line-height: 1;
+}
+.top-corner-icon-box { position: absolute; top: 10px; right: 12px; color: var(--orange); opacity: 0.5; }
+.member-name-text { font-size: 14px; font-weight: 700; color: var(--white); margin: 0 0 6px 0; }
+.position-label-text { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.coach-label-accent { color: var(--orange); }
+.badge-pill-modern {
+  display: inline-block; font-size: 12px; font-weight: 700;
+  padding: 3px 10px; border-radius: 12px; border: 1px solid;
+  margin-bottom: 6px; width: fit-content;
+}
+.leader-badge-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(249,115,22,0.12); color: var(--orange);
+  border: 1px solid rgba(249,115,22,0.3);
+  font-size: 11px; padding: 3px 8px; border-radius: 10px; width: fit-content;
+}
+.empty-team-message { color: var(--muted); text-align: center; padding: 32px; font-size: 14px; }
+
+/* ─── Home Stats Grid ────────────────────────────────────── */
+/*
+  ЗАМ: Энэ блокыг таны глобал CSS файл доторх
+  "/* ─── Home Stats Grid ─── * /" гэсэн хэсгийг БҮХЭЛД нь орлуулаад тавь.
+  (.stats-section, .stats-grid, .stat-card бүх дэд классуудыг хамруулав.)
+*/
+
+/* ─── Home Stats Grid (Glassmorphism + өнгөт icon) ───────── */
+.stats-section {
+  padding: 56px 0;
+  position: relative;
+  background: radial-gradient(ellipse 60% 100% at 50% 0%, rgba(249, 115, 22, 0.06), transparent 60%), var(--navy);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+.stat-card {
+  /* Home.tsx-с --accent / --accent-rgb inline style-аар ирнэ, эндээс fallback */
+  --accent: var(--orange);
+  --accent-rgb: 249, 115, 22;
+
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 16px;
+  padding: 22px 24px;
+  overflow: hidden;
+  isolation: isolate;
+  transition: transform .25s ease, background .25s ease, box-shadow .25s ease, border-color .25s ease;
+}
+
+/* Картны цаана өнгөт "glow" толбо — glass дээгүүр гэрэлтэнэ */
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: -40%;
+  left: -15%;
+  width: 65%;
+  height: 180%;
+  background: rgba(var(--accent-rgb), 0.35);
+  filter: blur(46px);
+  opacity: .55;
+  z-index: -1;
+  transition: opacity .25s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-5px);
+  background: rgba(255, 255, 255, 0.075);
+  border-color: rgba(var(--accent-rgb), 0.4);
+  box-shadow: 0 18px 40px -18px rgba(var(--accent-rgb), 0.55);
+}
+
+.stat-card:hover::before {
+  opacity: .85;
+}
+
+.stat-card .stat-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  flex-shrink: 0;
+  background: rgba(var(--accent-rgb), 0.16);
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform .25s ease;
+}
+
+.stat-card:hover .stat-icon {
+  transform: scale(1.08) rotate(-4deg);
+}
+
+.stat-card .stat-info h3 {
+  font-family: var(--font-display);
+  font-size: 34px;
+  line-height: 1;
+  color: var(--white);
+}
+
+.stat-card .stat-info p {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* Responsive — таны файлд байсан хуучин breakpoint-уудтай тааруулсан */
+@media (max-width: 900px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+  .stats-grid { grid-template-columns: 1fr; }
+}
+
+/* ─── btn-secondary ──────────────────────────────────────── */
+.btn-secondary {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,0.06); color: var(--white);
+  text-decoration: none; border: 1px solid rgba(255,255,255,0.12);
+  padding: 14px 28px; border-radius: var(--radius-sm);
+  font-size: 15px; font-weight: 600; cursor: pointer; transition: all .2s;
+}
+.btn-secondary:hover { background: rgba(255,255,255,0.1); }
+
+/* ─── Schedule Progress ──────────────────────────────────── */
+.day-hours { font-size: 10px; background: rgba(249,115,22,0.15); color: var(--orange); padding: 2px 6px; border-radius: 8px; font-weight: 700; }
+
+/* ─── Admin Tabs ─────────────────────────────────────────── */
+.admin-tabs {
+  display: flex; gap: 8px; margin-bottom: 28px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px; padding: 6px; width: fit-content;
+}
+.admin-tab-btn {
+  display: flex; align-items: center; gap: 8px;
+  background: none; border: none; color: var(--muted);
+  padding: 10px 20px; border-radius: 8px;
+  font-size: 14px; font-weight: 600; cursor: pointer; transition: all .2s;
+}
+.admin-tab-btn:hover { color: var(--white); background: rgba(255,255,255,0.05); }
+.admin-tab-btn.active {
+  background: rgba(59,130,246,0.15); color: #60a5fa;
+  border: 1px solid rgba(59,130,246,0.3);
+}
+
+/* ─── Responsive extras ──────────────────────────────────── */
+@media (max-width: 900px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .team-grid-horizontal { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .stats-grid { grid-template-columns: 1fr; }
+}
+
+/* ─── Page Transitions ───────────────────────────────────── */
+.page-transition {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.page-transition.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ─── Attendance ──────────────────────────────────────────── */
+.attendance-day-cell { transition: all .15s; }
+
+
+
+
+/*
+  ЗАМ: Энэ блокыг таны глобал CSS файлын "─── CTA band ───" хэсгийн ойролцоо
+  (эсвэл хаана ч) нэмж тавь. Home.tsx-д нэмсэн .home-about-bridge section-той хамт ажиллана.
+
+  Санаа: Hero доtorh 3D бөмбөгний шар (#fbbf24 ~ Mikasa yellow) болон
+  цэнхэр (#2563eb ~ Mikasa blue) өнгийг conic-gradient "orb" болгож,
+  About-руу тэй хэсэгт цуурайтуулна — дахин WebGL canvas үүсгэхгүй тул хямд.
+*/
+
+/* ─── Home → About Bridge ─────────────────────────────────── */
+
+.home-about-bridge {
+  padding: 20px 0 80px;
+}
+
+.bridge-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 40px;
+  background: linear-gradient(135deg, rgba(20, 27, 47, 0.85) 0%, rgba(10, 15, 30, 0.92) 100%);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 52px 56px;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* Mikasa шар/цэнхэр өнгийг цуурайтуулсан эргэдэг glow "бөмбөг" */
+.bridge-orb {
+  position: absolute;
+  top: 50%;
+  left: -70px;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  transform: translateY(-50%);
+  background: conic-gradient(from 120deg, #fbbf24, #2563eb, #fbbf24);
+  filter: blur(54px);
+  opacity: 0.4;
+  z-index: -1;
+  animation: bridge-orb-spin 14s linear infinite;
+}
+
+@keyframes bridge-orb-spin {
+  from { transform: translateY(-50%) rotate(0deg); }
+  to   { transform: translateY(-50%) rotate(360deg); }
+}
+
+.bridge-content {
+  position: relative;
+  max-width: 580px;
+}
+
+.bridge-content .eyebrow {
+  margin-bottom: 10px;
+}
+
+.bridge-content h2 {
+  font-family: var(--font-display);
+  font-size: 34px;
+  line-height: 1.1;
+  color: var(--white);
+  margin: 6px 0 14px;
+  letter-spacing: .3px;
+}
+
+.bridge-content p {
+  color: var(--muted);
+  line-height: 1.7;
+  font-size: 15px;
+  margin-bottom: 26px;
+}
+
+@media (max-width: 720px) {
+  .bridge-card {
+    flex-direction: column;
+    text-align: center;
+    padding: 40px 26px;
+  }
+  .bridge-orb {
+    left: 50%;
+    top: -50px;
+    transform: translateX(-50%);
+  }
+  @keyframes bridge-orb-spin {
+    from { transform: translateX(-50%) rotate(0deg); }
+    to   { transform: translateX(-50%) rotate(360deg); }
+  }
+  .bridge-content h2 { font-size: 26px; }
+  .bridge-content p { margin-bottom: 20px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bridge-orb { animation: none; }
+}
