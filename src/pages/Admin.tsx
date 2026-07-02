@@ -547,9 +547,9 @@ export default function Admin() {
                           </div>
                         </td>
                         <td style={{ padding: '14px 16px' }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 10, background: u.role === 'admin' ? 'rgba(249,115,22,0.15)' : 'rgba(255,255,255,0.06)', color: u.role === 'admin' ? '#f97316' : '#9ca3af', border: `1px solid ${u.role === 'admin' ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.08)'}` }}>
-                            {u.role === 'admin' ? '⚡ Admin' : '👤 User'}
-                          </span>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 10, background: u.role === 'admin' ? 'rgba(249,115,22,0.15)' : 'rgba(255,255,255,0.06)', color: u.role === 'admin' ? '#f97316' : '#9ca3af', border: `1px solid ${u.role === 'admin' ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.08)'}`, display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+  {u.role === 'admin' ? '⚡ Admin' : '👤 User'}
+</span>
                         </td>
                         <td style={{ padding: '14px 16px', color: '#e5e7eb', fontWeight: 600 }}>{limit} удаа</td>
                         <td style={{ padding: '14px 16px', fontWeight: 700, color: sc }}>{visits} удаа</td>
