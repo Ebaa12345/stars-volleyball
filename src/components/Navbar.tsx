@@ -62,8 +62,8 @@ export default function Navbar() {
             </>
           ) : (
             <>
-              <Link to="/login" className="nav-btn-ghost">Нэвтрэх</Link>
-              <Link to="/signup" className="nav-btn-primary">Бүртгүүлэх</Link>
+              <Link to="/login" className="nav-btn-primary">Нэвтрэх</Link>
+              
             </>
           )}
         </div>

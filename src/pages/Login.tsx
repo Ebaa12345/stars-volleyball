@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
-import { Award, LogIn } from 'lucide-react'
+import { Award, LogIn, Stars } from 'lucide-react'
 
 export default function Login() {
   const { signIn } = useAuth()
@@ -48,8 +48,8 @@ export default function Login() {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-logo">
-          <Award size={36} />
-          <span>VolleyMN</span>
+          <Stars size={36} />
+          <span>Stars Volleyball</span>
         </div>
         <h1>Нэвтрэх</h1>
         <p className="auth-sub">Хуваариа харахын тулд нэвтэрнэ үү</p>

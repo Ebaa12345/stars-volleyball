@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { supabase, Profile, Program, SessionAssignment, SessionType } from '../lib/supabase'
+import { useEffect, useRef, useState } from 'react'
+import { supabase, Profile, Program, ProgramDayTime, ProgramDateTime, SessionAssignment, SessionType } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -7,7 +7,7 @@ import {
   Search, ShieldCheck, User,
   MapPin, Clock, FileText, Percent,
   CalendarDays, Mail, Send, X, Check,
-  CheckCircle2, XCircle, ClipboardCheck, ListChecks, Pencil
+  CheckCircle2, XCircle, ClipboardCheck, ListChecks, Pencil, Image as ImageIcon
 } from 'lucide-react'
 
 interface ExtendedProfile extends Profile {}
@@ -69,12 +69,15 @@ export default function Admin() {
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
   const [profileDraft, setProfileDraft] = useState<{ position: string; jersey_number: string; avatar_url: string }>({ position: '', jersey_number: '', avatar_url: '' })
   const [profileSaving, setProfileSaving] = useState<string | null>(null)
+  // Компьютер/утаснаас зураг сонгож Supabase Storage-руу upload хийх үед,
+  // аль хэрэглэгчийн хувьд ачааллаж байгааг заана.
+  const [avatarUploading, setAvatarUploading] = useState<string | null>(null)
   const [toast, setToast] = useState('')
 
   // Programs catalog
   const [programs, setPrograms] = useState<Program[]>([])
-  const [programForm, setProgramForm] = useState<{ id: string | null; name: string; start_time: string; end_time: string; location: string; type: SessionType }>({
-    id: null, name: '', start_time: '18:00', end_time: '20:00', location: '', type: 'practice'
+  const [programForm, setProgramForm] = useState<{ id: string | null; name: string; start_time: string; end_time: string; location: string; type: SessionType; day_schedule: ProgramDayTime[]; date_schedule: ProgramDateTime[] }>({
+    id: null, name: '', start_time: '18:00', end_time: '20:00', location: '', type: 'practice', day_schedule: [], date_schedule: []
   })
   const [savingProgram, setSavingProgram] = useState(false)
   // Тухайн Program дээр дарахад харагдах, тэр хөтөлбөрт хамрагдаж буй тоглогчид
@@ -82,11 +85,24 @@ export default function Admin() {
   const [programAssignments, setProgramAssignments] = useState<SessionAssignment[]>([])
   const [programAssignmentsLoading, setProgramAssignmentsLoading] = useState(false)
 
+  // Хөтөлбөрийн форм дээрх "📅 Огноо сонгох" — бүтэн сарын хуанли гарч,
+  // admin шууд огноо дараад сонгодог/цуцалдаг
+  const [showProgramDatePicker, setShowProgramDatePicker] = useState(false)
+  const [programDatePickerMonth, setProgramDatePickerMonth] = useState(new Date())
+
+  // Схедулийн зурган дээрх DAYS_SHORT ('Да'=Даваа...) индекс i-г JS Date.getDay()
+  // утга (0=Ням...6=Бямба) руу хөрвүүлнэ, мөн эсрэгээр.
+  const dayIdxToJsDay = (i: number) => (i + 1) % 7
+  const jsDayToDayIdx = (d: number) => (d + 6) % 7
+
   // Schedule tab: per-user, per-date assignment (аль ч өдөр сонгоно, долоо хоног бүр давтагдахгүй)
   const [assignMonth, setAssignMonth] = useState(new Date())
   const [userAssignments, setUserAssignments] = useState<Record<string, SessionAssignment[]>>({})
   const [selectedAssignDate, setSelectedAssignDate] = useState<string | null>(null)
   const [newAssignProgramId, setNewAssignProgramId] = useState<string>('')
+  // Хурдан оноолт: сар доторх тохирох (day_schedule/date_schedule) бүх өдөрт нэг дор оноох
+  const [quickAssignProgramId, setQuickAssignProgramId] = useState<string>('')
+  const [bulkAssigning, setBulkAssigning] = useState(false)
   const [newAssignStart, setNewAssignStart] = useState('18:00')
   const [newAssignEnd, setNewAssignEnd] = useState('20:00')
   const [newAssignLocation, setNewAssignLocation] = useState('')
@@ -98,9 +114,11 @@ export default function Admin() {
   // Одоогийн бодит сарын "Ирсэн" тоо тоглогч бүрээр — Явцын багана дээр ашиглана
   const [thisMonthPresent, setThisMonthPresent] = useState<Record<string, number>>({})
 
-  // Invite
+  // Invite / шинэ хэрэглэгч үүсгэх (modal)
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false)
   const [inviteName, setInviteName] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
+  const [invitePassword, setInvitePassword] = useState('')
   const [inviteSending, setInviteSending] = useState(false)
   const [inviteResult, setInviteResult] = useState<{ type: 'success' | 'error', msg: string } | null>(null)
 
@@ -111,6 +129,10 @@ export default function Admin() {
   const [attendanceSearch, setAttendanceSearch] = useState('')
   const [attMonth, setAttMonth] = useState(new Date())
   const [attMonthData, setAttMonthData] = useState<AttMonthMap>({})
+  // Ирц бүртгэх дээр хөтөлбөрөөр шүүх — сонговол зөвхөн тэр хөтөлбөрт (ямар ч
+  // огноогоор) оноогдож байсан тоглогчид л жагсаалтад гарч ирнэ.
+  const [attendanceProgramFilter, setAttendanceProgramFilter] = useState('')
+  const [programMemberIds, setProgramMemberIds] = useState<Set<string> | null>(null)
 
   // Calendar tab (нийт хуваарь)
   const [calendarMonth, setCalendarMonth] = useState(new Date())
@@ -118,12 +140,19 @@ export default function Admin() {
   const [monthAttendance, setMonthAttendance] = useState<AttMonthMap>({})
   const [monthAssignments, setMonthAssignments] = useState<Record<string, SessionAssignment[]>>({})
 
-  useEffect(() => { if (!loading && !isAdmin) navigate('/') }, [isAdmin, loading, navigate])
+  // Шинэ хэрэглэгч үүсгэх үед supabase.auth.signUp() админы session-г түр
+  // шинэ хэрэглэгчийн session рүү сольдог (Supabase JS-ийн зан төлөв). Тэр
+  // богино мөчид useAuth-ийн isAdmin худал болж, доорх redirect ажиллаад
+  // /admin-аас гарчихаж болзошгүй тул creatingUserRef=true үед л дарж түр
+  // саатуулна — session-г буцааж сэргээмэгц ref буцаад false болно.
+  const creatingUserRef = useRef(false)
+  useEffect(() => { if (!loading && !isAdmin && !creatingUserRef.current) navigate('/') }, [isAdmin, loading, navigate])
 
   useEffect(() => { fetchUsers() }, [])
   useEffect(() => { fetchPrograms() }, [])
   useEffect(() => { fetchThisMonthPresent() }, [])
   useEffect(() => { fetchAttendance() }, [attendanceDate])
+  useEffect(() => { if (attendanceProgramFilter) fetchProgramMembers(attendanceProgramFilter); else setProgramMemberIds(null) }, [attendanceProgramFilter])
   useEffect(() => { fetchMonthAttendance(calendarMonth, setMonthAttendance) }, [calendarMonth])
   useEffect(() => { fetchMonthAttendance(attMonth, setAttMonthData) }, [attMonth])
   useEffect(() => { fetchMonthAssignments(calendarMonth) }, [calendarMonth])
@@ -189,6 +218,17 @@ export default function Admin() {
     setAttendanceMap(map)
   }
 
+  // "Ирц бүртгэх"-ийн хөтөлбөрөөр шүүх сонголт: тухайн хөтөлбөрт ЯМАР Ч
+  // огноогоор (зөвхөн сонгосон өдөр биш) оноогдож байсан бүх тоглогчийг
+  // "гишүүн" гэж үзнэ — ингэснээр сонгосон өдөрт тухайлбал бас шинээр
+  // ирц тэмдэглэх боломжтой болно (зөвхөн тэр өдрийн session_assignments
+  // мөр байгаа хүмүүсийг харуулбал, шинэ өдөр дээр хараахан "Хурдан
+  // оноолт" хийгээгүй үед жагсаалт хоосон гарч байсан асуудлыг засав).
+  async function fetchProgramMembers(programId: string) {
+    const { data } = await supabase.from('session_assignments').select('user_id').eq('program_id', programId)
+    setProgramMemberIds(new Set((data || []).map((r: any) => r.user_id as string)))
+  }
+
   async function markAttendance(userId: string, status: 'present' | 'absent' | 'unmarked') {
     setAttendanceSaving(userId)
     const d = attendanceDate
@@ -246,6 +286,33 @@ export default function Admin() {
     setRoleUpdating(null)
   }
 
+  // Компьютер/утаснаас (камер эсвэл галерей) зураг сонгуулж, Supabase
+  // Storage-ийн "avatars" bucket рүү upload хийгээд, буцаж ирсэн public URL-г
+  // profileDraft.avatar_url-д онооно ("Хадгалах" дарахад л profiles-д бичигдэнэ).
+  async function uploadAvatar(userId: string, file: File) {
+    if (!file.type.startsWith('image/')) {
+      showToast('Зөвхөн зургийн файл (jpg, png гэх мэт) сонгоно уу.')
+      return
+    }
+    setAvatarUploading(userId)
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+      const path = `${userId}/${Date.now()}.${ext}`
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
+      if (uploadError) {
+        showToast('Зураг оруулахад алдаа гарлаа: ' + uploadError.message)
+        setAvatarUploading(null)
+        return
+      }
+      const { data } = supabase.storage.from('avatars').getPublicUrl(path)
+      setProfileDraft(d => ({ ...d, avatar_url: data.publicUrl }))
+      showToast('Зураг орлоо — доор "Хадгалах" дарж баталгаажуулна уу')
+    } catch (e: any) {
+      showToast('Алдаа: ' + (e?.message || 'Зураг оруулахад алдаа гарлаа.'))
+    }
+    setAvatarUploading(null)
+  }
+
   // Тоглогч/дасгалжуулагчийн танилцуулга (байрлал, дугаар, зураг) — Багийн
   // хуудсан дээр (Team.tsx) харагдана. "Дэлгэрэнгүй" panel-аас засна.
   async function saveUserProfile(userId: string, patch: { position: string; jersey_number: string; avatar_url: string }) {
@@ -277,64 +344,94 @@ export default function Admin() {
     })
   }
 
+  // Хэрэглэгчийг бүрмөсөн устгах — Edge Function (admin-users) дуудаж, зөвхөн
+  // profiles-оос биш, Supabase Auth (auth.users)-ээс ч бодитоор устгана.
+  // auth.users-ээс шууд устгадаг SQL функц (admin_delete_user) дуудна —
+  // Edge Function шаардахгүй. auth.users устахад profiles мөр нь FK cascade-аар
+  // автоматаар дагаж устдаг тул хэрэглэгч database-ийн ХОЁР талаас (auth + profiles)
+  // бүрмөсөн устна.
   async function deleteUser(userId: string, name: string) {
-    if (!window.confirm(`${name}-г бүрмөсөн устгах уу? Холбоотой хуваарь, ирцийн бүртгэл устна. Энэ үйлдлийг буцаах боломжгүй.`)) return
+    if (!window.confirm(`${name}-г бүрмөсөн устгах уу? Нэвтрэх эрх (auth) болон холбоотой хуваарь, ирцийн бүртгэл бүгд устна. Энэ үйлдлийг буцаах боломжгүй.`)) return
     setDeletingUserId(userId)
-    // profiles мөрийг устгахад холбоотой session_assignments болон attendance мөрүүд
-    // FK "on delete cascade"-ийн ачаар автоматаар устна.
-    const { error } = await supabase.from('profiles').delete().eq('id', userId)
-    if (!error) {
-      setAllUsers(prev => prev.filter(u => u.id !== userId))
-      setUsers(prev => prev.filter(u => u.id !== userId))
-      if (selectedUser?.id === userId) setSelectedUser(null)
-      showToast('Хэрэглэгч устгагдлаа')
-    } else {
-      showToast('Алдаа: ' + error.message)
+    try {
+      const { error } = await supabase.rpc('admin_delete_user', { target_user_id: userId })
+      if (!error) {
+        setAllUsers(prev => prev.filter(u => u.id !== userId))
+        setUsers(prev => prev.filter(u => u.id !== userId))
+        if (selectedUser?.id === userId) setSelectedUser(null)
+        showToast('Хэрэглэгч бүрмөсөн устгагдлаа')
+      } else {
+        showToast('Алдаа: ' + error.message)
+      }
+    } catch (e: any) {
+      showToast('Алдаа: ' + (e?.message || 'Устгахад алдаа гарлаа.'))
     }
     setDeletingUserId(null)
   }
 
+  // Санамсаргүй, амархан унших боломжтой нууц үг үүсгэнэ (тэр хүнд admin
+  // өөрөө утас/Messenger-ээр дамжуулна).
+  function generateInvitePassword() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
+    let pass = ''
+    for (let i = 0; i < 8; i++) pass += chars[Math.floor(Math.random() * chars.length)]
+    setInvitePassword(pass)
+  }
+
+  // Шинэ хэрэглэгч үүсгэх — Edge Function ШААРДАХГҮЙ: client талын supabase.auth.signUp() ашиглаад,
+  // дуудахаас өмнө админы session-г хадгалж аваад, дараа нь буцааж сэргээнэ.
+  // ЗААВАЛ шаардлагатай: Supabase Dashboard → Authentication → Providers →
+  // Email → "Confirm email" УНТАРСАН байх ёстой (үгүй бол шинэ хэрэглэгч
+  // email баталгаажуулаагүй тул session буцаж ирэхгүй, мөн нэвтэрч чадахгүй).
   async function sendInvite() {
-    if (!inviteEmail.trim()) return
+    if (!inviteEmail.trim() || !invitePassword.trim()) return
     setInviteSending(true)
     setInviteResult(null)
     const targetEmail = inviteEmail.trim()
-    // Нэрийг оруулаагүй бол email-ийн @-с өмнөх хэсгийг түр нэр болгож ашиглана.
-    // (Хэрэв DB талд шинэ хэрэглэгч бүртгэгдэхэд full_name-г шаарддаг trigger байгаа бол
-    // нэргүй signUp 500 алдаа буцаадаг байсан тул үүнийг заавал дамжуулна.)
     const targetName = inviteName.trim() || targetEmail.split('@')[0]
+    const targetPassword = invitePassword.trim()
+    creatingUserRef.current = true
     try {
-      const { error: signUpError } = await supabase.auth.signUp({
+      const { data: { session: adminSession } } = await supabase.auth.getSession()
+
+      const { error } = await supabase.auth.signUp({
         email: targetEmail,
-        password: 'TEMPORARY_PASSWORD_123_!!!',
-        options: {
-          emailRedirectTo: `${window.location.origin}/set-password`,
-          data: { full_name: targetName },
-        }
+        password: targetPassword,
+        options: { data: { full_name: targetName } },
       })
-      if (signUpError) {
-        const msg = signUpError.message || ''
-        if (msg.toLowerCase().includes('already')) {
-          setInviteResult({ type: 'error', msg: `${targetEmail} хаяг аль хэдийн бүртгэлтэй байна.` })
-        } else if (msg.toLowerCase().includes('rate limit')) {
-          setInviteResult({ type: 'error', msg: 'И-мэйл лимит хэтэрсэн байна. Жаахан хүлээгээд дахин оролдоно уу.' })
-        } else if (msg.toLowerCase().includes('database')) {
-          setInviteResult({ type: 'error', msg: 'Бүртгэл үүсгэхэд серверийн алдаа гарлаа (database error saving new user). Supabase-ийн Auth Logs хэсгээс дэлгэрэнгүй шалтгааныг харна уу.' })
-        } else {
-          setInviteResult({ type: 'error', msg: msg || 'Урилга илгээхэд алдаа гарлаа.' })
-        }
+
+      // Админы session-г нэн даруй сэргээнэ — signUp амжилттай/амжилтгүй
+      // эсэхээс үл хамаарна (амжилтгүй бол ч гэсэн session солигдсон байж болзошгүй).
+      if (adminSession) {
+        await supabase.auth.setSession({
+          access_token: adminSession.access_token,
+          refresh_token: adminSession.refresh_token,
+        })
+      }
+
+      if (error) {
+        const msg = error.message || ''
+        const friendly = msg.toLowerCase().includes('already') || msg.toLowerCase().includes('registered')
+          ? `${targetEmail} хаяг аль хэдийн бүртгэлтэй байна.`
+          : (msg || 'Хэрэглэгч үүсгэхэд алдаа гарлаа.')
+        setInviteResult({ type: 'error', msg: friendly })
         setInviteSending(false)
+        creatingUserRef.current = false
         return
       }
-      setInviteResult({ type: 'success', msg: `${targetEmail} хаягт бүртгэл үүслээ. Тэр хүн "Нэвтрэх" хуудаснаас "Нууц үг мартсан уу?" холбоосоор өөрийн нууц үгээ тохируулна.` })
-      setInviteEmail('')
-      setInviteName('')
+
+      setInviteResult({
+        type: 'success',
+        msg: `${targetName} (${targetEmail}) амжилттай үүслээ. Нууц үг: ${targetPassword} — үүнийг тэр хүнд өөрөө дамжуулна уу.`,
+      })
+      setInviteName(''); setInviteEmail(''); setInvitePassword('')
       fetchUsers()
     } catch (error: any) {
-      console.error('Invite error:', error)
-      setInviteResult({ type: 'error', msg: error?.message || 'Урилга илгээхэд алдаа гарлаа.' })
+      console.error('Create user error:', error)
+      setInviteResult({ type: 'error', msg: error?.message || 'Хэрэглэгч үүсгэхэд алдаа гарлаа.' })
     } finally {
       setInviteSending(false)
+      creatingUserRef.current = false
     }
   }
 
@@ -369,10 +466,89 @@ export default function Admin() {
       setNewAssignLocation(''); setNewAssignNotes('')
       fetchUserAssignments(selectedUser.id, assignMonth)
       fetchMonthAssignments(calendarMonth)
+    } else if (error.code === '23505' || error.message?.toLowerCase().includes('duplicate')) {
+      showToast('Энэ өдөрт яг ийм цагаар аль хэдийн хуваарь байна.')
     } else {
       showToast('Алдаа: ' + error.message)
     }
     setSavingAssignment(false)
+  }
+
+  // "Хурдан оноолт": day_schedule-ийн тохирох өдрүүд + date_schedule дундаас
+  // одоо харагдаж буй сард (assignMonth) багтах бүх огноог нэгтгэж, ӨДӨР/ОГНОО
+  // ТУС БҮРИЙН ӨӨРИЙН ЦАГААР нь оноодог. date_schedule нь day_schedule-ээс
+  // тэргүүлнэ (тухайн өдөр аль алинд нь давхацвал тодорхой огнооных нь цаг үлдэнэ).
+  // Тухайн өдөрт энэ хөтөлбөр аль хэдийн оноогдсон бол давхардуулахгүй.
+  async function bulkAssignProgramToMonth() {
+    if (!selectedUser || !quickAssignProgramId) return
+    const program = programs.find(p => p.id === quickAssignProgramId)
+    if (!program) return
+    const daySchedule = program.day_schedule || []
+    const dateSchedule = program.date_schedule || []
+    if (daySchedule.length === 0 && dateSchedule.length === 0) return
+
+    setBulkAssigning(true)
+    const year = assignMonth.getFullYear()
+    const month = assignMonth.getMonth()
+    const daysInMonth = new Date(year, month + 1, 0).getDate()
+    const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`
+
+    // dateStr -> {start_time, end_time} — тухайн өдрийн цаг
+    const targetDates = new Map<string, { start_time: string; end_time: string }>()
+    if (daySchedule.length > 0) {
+      for (let d = 1; d <= daysInMonth; d++) {
+        const date = new Date(year, month, d)
+        const match = daySchedule.find(ds => ds.day === date.getDay())
+        if (match) targetDates.set(ymd(date), { start_time: match.start_time, end_time: match.end_time })
+      }
+    }
+    if (dateSchedule.length > 0) {
+      dateSchedule.filter(ds => ds.date.startsWith(monthPrefix)).forEach(ds => {
+        targetDates.set(ds.date, { start_time: ds.start_time, end_time: ds.end_time })
+      })
+    }
+
+    const rows: any[] = []
+    targetDates.forEach((time, dateStr) => {
+      const already = (userAssignments[dateStr] || []).some(a => a.program_id === program.id)
+      if (already) return
+      rows.push({
+        user_id: selectedUser.id,
+        date: dateStr,
+        program_id: program.id,
+        start_time: time.start_time,
+        end_time: time.end_time,
+        location: program.location,
+        type: program.type,
+        notes: '',
+        created_by: 'admin',
+      })
+    })
+
+    if (rows.length === 0) {
+      showToast('Бүх тохирох өдөр аль хэдийн оноогдсон байна.')
+      setBulkAssigning(false)
+      return
+    }
+
+    // upsert + ignoreDuplicates ашиглаж байгаа шалтгаан: session_assignments
+    // хүснэгтэд (user_id, date, start_time) unique constraint байдаг тул хэрэв
+    // сонгосон огноонуудын аль нэг дээр аль хэдийн адилхан цагтай хуваарь
+    // байвал plain insert() БҮХ мөрийг цуг татгалзаж 409 өгдөг байсан.
+    // ignoreDuplicates: true бол зөрчилтэй мөрүүдийг л алгасаад, шинэ
+    // мөрүүдийг амжилттай нэмнэ.
+    const { error } = await supabase.from('session_assignments').upsert(rows, {
+      onConflict: 'user_id,date,start_time',
+      ignoreDuplicates: true,
+    })
+    if (!error) {
+      showToast(`${rows.length} өдөрт "${program.name}" амжилттай оноолоо ✓`)
+      fetchUserAssignments(selectedUser.id, assignMonth)
+      fetchMonthAssignments(calendarMonth)
+    } else {
+      showToast('Алдаа: ' + error.message)
+    }
+    setBulkAssigning(false)
   }
 
   async function removeAssignment(id: string) {
@@ -396,10 +572,63 @@ export default function Admin() {
   }
 
   // ── Programs CRUD ──
-  function resetProgramForm() { setProgramForm({ id: null, name: '', start_time: '18:00', end_time: '20:00', location: '', type: 'practice' }) }
+  function resetProgramForm() { setProgramForm({ id: null, name: '', start_time: '18:00', end_time: '20:00', location: '', type: 'practice', day_schedule: [], date_schedule: [] }) }
 
   function editProgram(p: Program) {
-    setProgramForm({ id: p.id, name: p.name, start_time: p.start_time, end_time: p.end_time, location: p.location, type: p.type })
+    // Хуучин (days_of_week/specific_dates) өгөгдөлтэй, гэвч шинэ
+    // day_schedule/date_schedule хараахан (migration-аар) бөглөгдөөгүй бол —
+    // хамгаалалт болгож клиент талд нь хөрвүүлж өгнө.
+    const day_schedule = (p.day_schedule && p.day_schedule.length > 0)
+      ? p.day_schedule
+      : (p.days_of_week || []).map(d => ({ day: d, start_time: p.start_time, end_time: p.end_time }))
+    const date_schedule = (p.date_schedule && p.date_schedule.length > 0)
+      ? p.date_schedule
+      : (p.specific_dates || []).map(d => ({ date: d, start_time: p.start_time, end_time: p.end_time }))
+    setProgramForm({ id: p.id, name: p.name, start_time: p.start_time, end_time: p.end_time, location: p.location, type: p.type, day_schedule, date_schedule })
+  }
+
+  // Хөтөлбөрийн форм дээрх өдрийн товч (Да/Мя/Лх/...) дарахад тухайн jsDay-г
+  // day_schedule массивт нэмэх (Program-ий ерөнхий цагийг эхний утга болгоно)/хасах
+  function toggleProgramDay(jsDay: number) {
+    setProgramForm(f => {
+      const has = f.day_schedule.some(d => d.day === jsDay)
+      return {
+        ...f,
+        day_schedule: has
+          ? f.day_schedule.filter(d => d.day !== jsDay)
+          : [...f.day_schedule, { day: jsDay, start_time: f.start_time, end_time: f.end_time }].sort((a, b) => a.day - b.day),
+      }
+    })
+  }
+
+  // Сонгосон өдрийн (day_schedule мөрийн) эхлэх/дуусах цагийг тухайлан засах
+  function updateProgramDayTime(jsDay: number, field: 'start_time' | 'end_time', value: string) {
+    setProgramForm(f => ({
+      ...f,
+      day_schedule: f.day_schedule.map(d => d.day === jsDay ? { ...d, [field]: value } : d),
+    }))
+  }
+
+  // "📅 Огноо сонгох" хуанли дээр огноо дарахад date_schedule массивт
+  // нэмэх (Program-ий ерөнхий цагийг эхний утга болгоно)/хасах
+  function toggleProgramSpecificDate(dateStr: string) {
+    setProgramForm(f => {
+      const has = f.date_schedule.some(d => d.date === dateStr)
+      return {
+        ...f,
+        date_schedule: has
+          ? f.date_schedule.filter(d => d.date !== dateStr)
+          : [...f.date_schedule, { date: dateStr, start_time: f.start_time, end_time: f.end_time }].sort((a, b) => a.date.localeCompare(b.date)),
+      }
+    })
+  }
+
+  // Сонгосон огнооны (date_schedule мөрийн) эхлэх/дуусах цагийг тухайлан засах
+  function updateProgramDateTime(dateStr: string, field: 'start_time' | 'end_time', value: string) {
+    setProgramForm(f => ({
+      ...f,
+      date_schedule: f.date_schedule.map(d => d.date === dateStr ? { ...d, [field]: value } : d),
+    }))
   }
 
   async function saveProgram() {
@@ -408,13 +637,15 @@ export default function Admin() {
     if (programForm.id) {
       const { error } = await supabase.from('programs').update({
         name: programForm.name, start_time: programForm.start_time, end_time: programForm.end_time,
-        location: programForm.location, type: programForm.type,
+        location: programForm.location, type: programForm.type, day_schedule: programForm.day_schedule,
+        date_schedule: programForm.date_schedule,
       }).eq('id', programForm.id)
       if (!error) showToast('Хөтөлбөр шинэчлэгдлээ ✓')
     } else {
       const { error } = await supabase.from('programs').insert({
         name: programForm.name, start_time: programForm.start_time, end_time: programForm.end_time,
-        location: programForm.location, type: programForm.type,
+        location: programForm.location, type: programForm.type, day_schedule: programForm.day_schedule,
+        date_schedule: programForm.date_schedule,
       })
       if (!error) showToast('Хөтөлбөр нэмэгдлээ ✓')
     }
@@ -471,6 +702,13 @@ export default function Admin() {
   const attCells = buildCalendarCells(attMonth)
   const attMonthIdx = attMonth.getMonth()
   const attYear = attMonth.getFullYear()
+
+  // Хөтөлбөрөөр шүүсэн бол зөвхөн тэр хөтөлбөрт (ямар ч огноогоор) оноогдож
+  // байсан тоглогчид, эсэрэг тохиолдолд бүх тоглогч (нэрээр хайлт хоёулаа AND).
+  const attendanceProgramUserIds = attendanceProgramFilter ? programMemberIds : null
+  const visibleAttendanceUsers = users
+    .filter(u => u.full_name?.toLowerCase().includes(attendanceSearch.toLowerCase()))
+    .filter(u => !attendanceProgramUserIds || attendanceProgramUserIds.has(u.id))
 
   return (
     <div className="page admin-page">
@@ -559,9 +797,9 @@ export default function Admin() {
                           </div>
                         </td>
                         <td style={{ padding: '14px 16px' }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 10, background: u.role === 'admin' ? 'rgba(249,115,22,0.15)' : 'rgba(255,255,255,0.06)', color: u.role === 'admin' ? '#f97316' : '#9ca3af', border: `1px solid ${u.role === 'admin' ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.08)'}`, display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
-  {u.role === 'admin' ? '⚡ Admin' : '👤 User'}
-</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 10, background: u.role === 'admin' ? 'rgba(249,115,22,0.15)' : 'rgba(255,255,255,0.06)', color: u.role === 'admin' ? '#f97316' : '#9ca3af', border: `1px solid ${u.role === 'admin' ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.08)'}` }}>
+                            {u.role === 'admin' ? '⚡ Admin' : '👤 User'}
+                          </span>
                         </td>
                         <td style={{ padding: '14px 16px', color: '#e5e7eb', fontWeight: 600 }}>{limit} удаа</td>
                         <td style={{ padding: '14px 16px', fontWeight: 700, color: sc }}>{visits} удаа</td>
@@ -662,14 +900,42 @@ export default function Admin() {
                       </div>
                     </div>
 
-                    {/* Сарын хуанли: аль ч өдрийг сонгоод хуваарь оноох */}
-                    <div style={{ background: 'rgba(17, 24, 39, 0.35)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 18 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, marginBottom: 8 }}>
+                    {/* Хурдан оноолт: долоо хоногийн давтамжтай хөтөлбөрийг
+                        энэ сарын бүх тохирох өдөрт нэг дор оноох */}
+                    {programs.some(p => (p.day_schedule && p.day_schedule.length > 0) || (p.date_schedule && p.date_schedule.length > 0)) && (
+                      <div style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 16, padding: 16, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.82rem', color: '#93c5fd', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                          🔁 Хурдан оноолт:
+                        </span>
+                        <select value={quickAssignProgramId} onChange={e => setQuickAssignProgramId(e.target.value)}
+                          style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', padding: '9px 12px', borderRadius: 10, fontSize: '0.85rem', outline: 'none', flex: '1 1 220px' }}>
+                          <option value="">— Давтамжтай хөтөлбөр сонгох —</option>
+                          {programs.filter(p => (p.day_schedule && p.day_schedule.length > 0) || (p.date_schedule && p.date_schedule.length > 0)).map(p => {
+                            const parts: string[] = []
+                            if (p.day_schedule && p.day_schedule.length > 0) parts.push(p.day_schedule.map(ds => DAYS_SHORT[jsDayToDayIdx(ds.day)]).join(','))
+                            if (p.date_schedule && p.date_schedule.length > 0) parts.push(`${p.date_schedule.length} огноо`)
+                            return (
+                              <option key={p.id} value={p.id}>
+                                {p.name} ({parts.join(' + ')})
+                              </option>
+                            )
+                          })}
+                        </select>
+                        <button onClick={bulkAssignProgramToMonth} disabled={!quickAssignProgramId || bulkAssigning}
+                          style={{ background: '#3b82f6', color: '#fff', padding: '9px 18px', borderRadius: 10, border: 'none', fontWeight: 700, cursor: 'pointer', fontSize: '0.83rem', opacity: !quickAssignProgramId ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+                          {bulkAssigning ? 'Оноож байна...' : `${monthNames[assignMonthIdx]}-д бүгдэд нь оноох`}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Сарын хуанли: аль ч өдрийг сонгоод хуваарь оноох — жижиг, багахан зай эзэлдэг хувилбар */}
+                    <div style={{ background: 'rgba(17, 24, 39, 0.35)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14, padding: 12, maxWidth: 320 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginBottom: 4 }}>
                         {DAYS_SHORT.map(d => (
-                          <div key={d} style={{ textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, color: '#6b7280', padding: '4px 0', textTransform: 'uppercase' }}>{d}</div>
+                          <div key={d} style={{ textAlign: 'center', fontSize: '0.6rem', fontWeight: 700, color: '#6b7280', padding: '2px 0', textTransform: 'uppercase' }}>{d}</div>
                         ))}
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
                         {assignCells.map((cell, idx) => {
                           const dateStr = ymd(cell.date)
                           const isToday = dateStr === todayStr
@@ -680,16 +946,16 @@ export default function Admin() {
                               onClick={() => cell.inMonth && setSelectedAssignDate(isSelected ? null : dateStr)}
                               disabled={!cell.inMonth}
                               style={{
-                                aspectRatio: '1', minHeight: 56,
+                                aspectRatio: '1', minHeight: 30,
                                 background: isSelected ? 'rgba(59,130,246,0.18)' : isToday ? 'rgba(59,130,246,0.08)' : 'rgba(10,14,26,0.3)',
                                 border: isSelected ? '2px solid #3b82f6' : isToday ? '1px solid rgba(59,130,246,0.4)' : '1px solid rgba(255,255,255,0.04)',
-                                borderRadius: 10, padding: '6px 4px',
-                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', gap: 3,
+                                borderRadius: 7, padding: '2px',
+                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1,
                                 cursor: cell.inMonth ? 'pointer' : 'default', opacity: cell.inMonth ? 1 : 0.3, transition: 'all .15s'
                               }}>
-                              <span style={{ fontSize: '0.82rem', fontWeight: isToday ? 800 : 600, color: isToday ? '#60a5fa' : cell.inMonth ? '#e5e7eb' : '#4b5563' }}>{cell.date.getDate()}</span>
+                              <span style={{ fontSize: '0.68rem', fontWeight: isToday ? 800 : 600, color: isToday ? '#60a5fa' : cell.inMonth ? '#e5e7eb' : '#4b5563', lineHeight: 1 }}>{cell.date.getDate()}</span>
                               {count > 0 && (
-                                <span style={{ fontSize: '0.6rem', background: 'rgba(59,130,246,0.15)', color: '#60a5fa', padding: '1px 5px', borderRadius: 6, fontWeight: 700 }}>{count}</span>
+                                <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#60a5fa' }} />
                               )}
                             </button>
                           )
@@ -799,6 +1065,99 @@ export default function Admin() {
                   {TYPES.map(t => <option key={t} value={t} style={{ color: '#fff' }}>{TYPE_LABELS[t]}</option>)}
                 </select>
               </div>
+
+              {/* Долоо хоногийн давтамж — сонгосон бол хуваарь оноох үед
+                  "Хурдан оноолт"-оор энэ хөтөлбөрийг сарын тохирох бүх өдөрт нэг дор оноох боломжтой.
+                  Өдөр тус бүрийг сонгосны дараа доор нь ГАРАХ цагийн талбараар өөрийн гэсэн цаг өгч болно
+                  (анхны утга нь дээрх ерөнхий эхлэх/дуусах цаг). */}
+              <div style={{ marginTop: 14 }}>
+                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
+                  Долоо хоногийн давтамж (заавал биш)
+                </label>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {DAYS_SHORT.map((label, idx) => {
+                    const jsDay = dayIdxToJsDay(idx)
+                    const active = programForm.day_schedule.some(d => d.day === jsDay)
+                    return (
+                      <button key={idx} type="button" onClick={() => toggleProgramDay(jsDay)}
+                        style={{
+                          width: 42, height: 36, borderRadius: 9, fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
+                          background: active ? '#3b82f6' : 'rgba(255,255,255,0.05)',
+                          border: `1px solid ${active ? '#3b82f6' : 'rgba(255,255,255,0.1)'}`,
+                          color: active ? '#fff' : '#9ca3af', transition: 'all .12s',
+                        }}>
+                        {label}
+                      </button>
+                    )
+                  })}
+                  {programForm.day_schedule.length > 0 && (
+                    <button type="button" onClick={() => setProgramForm(f => ({ ...f, day_schedule: [] }))}
+                      style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '0.78rem', cursor: 'pointer', textDecoration: 'underline', marginLeft: 4 }}>
+                      Цэвэрлэх
+                    </button>
+                  )}
+                </div>
+
+                {/* Сонгосон өдөр бүрийн өөрийн гэсэн цаг */}
+                {programForm.day_schedule.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
+                    {programForm.day_schedule.map(ds => (
+                      <div key={ds.day} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8, padding: '6px 10px' }}>
+                        <span style={{ width: 32, fontSize: '0.78rem', fontWeight: 700, color: '#60a5fa' }}>{DAYS_SHORT[jsDayToDayIdx(ds.day)]}</span>
+                        <input type="time" value={ds.start_time} onChange={e => updateProgramDayTime(ds.day, 'start_time', e.target.value)}
+                          style={{ background: 'rgba(5,8,18,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '5px 8px', borderRadius: 7, fontSize: '0.78rem', outline: 'none' }} />
+                        <span style={{ color: '#6b7280', fontSize: '0.75rem' }}>–</span>
+                        <input type="time" value={ds.end_time} onChange={e => updateProgramDayTime(ds.day, 'end_time', e.target.value)}
+                          style={{ background: 'rgba(5,8,18,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '5px 8px', borderRadius: 7, fontSize: '0.78rem', outline: 'none' }} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Тодорхой огноонууд — бүтэн сарын хуанлиас шууд дарж сонгоно
+                  (7 хоногийн давтамжгүй, зөвхөн тухайн өдрүүдэд л хамаарах бол) */}
+              <div style={{ marginTop: 14 }}>
+                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
+                  Тодорхой огноонууд (заавал биш)
+                </label>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button type="button" onClick={() => { setProgramDatePickerMonth(new Date()); setShowProgramDatePicker(true) }}
+                    style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', color: '#60a5fa', padding: '9px 16px', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <CalendarDays size={14} /> Огноо сонгох
+                  </button>
+                  {programForm.date_schedule.length > 0 && (
+                    <>
+                      <span style={{ fontSize: '0.8rem', color: '#9ca3af' }}>{programForm.date_schedule.length} огноо сонгосон</span>
+                      <button type="button" onClick={() => setProgramForm(f => ({ ...f, date_schedule: [] }))}
+                        style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '0.78rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                        Цэвэрлэх
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {/* Сонгосон огноо бүрийн өөрийн гэсэн цаг */}
+                {programForm.date_schedule.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10, maxHeight: 220, overflowY: 'auto', paddingRight: 4 }}>
+                    {programForm.date_schedule.map(ds => (
+                      <div key={ds.date} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8, padding: '6px 10px' }}>
+                        <span style={{ width: 60, fontSize: '0.76rem', fontWeight: 700, color: '#c084fc' }}>{ds.date.slice(5)}</span>
+                        <input type="time" value={ds.start_time} onChange={e => updateProgramDateTime(ds.date, 'start_time', e.target.value)}
+                          style={{ background: 'rgba(5,8,18,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '5px 8px', borderRadius: 7, fontSize: '0.78rem', outline: 'none' }} />
+                        <span style={{ color: '#6b7280', fontSize: '0.75rem' }}>–</span>
+                        <input type="time" value={ds.end_time} onChange={e => updateProgramDateTime(ds.date, 'end_time', e.target.value)}
+                          style={{ background: 'rgba(5,8,18,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '5px 8px', borderRadius: 7, fontSize: '0.78rem', outline: 'none' }} />
+                        <button type="button" onClick={() => toggleProgramSpecificDate(ds.date)} title="Хасах"
+                          style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', marginLeft: 'auto' }}>
+                          <X size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
                 <button onClick={saveProgram} disabled={savingProgram || !programForm.name.trim()}
                   style={{ background: '#3b82f6', color: '#fff', padding: '10px 20px', borderRadius: 10, border: 'none', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', opacity: !programForm.name.trim() ? 0.5 : 1 }}>
@@ -811,6 +1170,78 @@ export default function Admin() {
                 )}
               </div>
             </div>
+
+            {/* ── Тодорхой огноо сонгох modal: бүтэн сарын хуанли, огноо дараад сонгоно/цуцална ── */}
+            {showProgramDatePicker && (
+              <div
+                onClick={() => setShowProgramDatePicker(false)}
+                style={{ position: 'fixed', inset: 0, background: 'rgba(5,8,18,0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
+                <div onClick={e => e.stopPropagation()}
+                  style={{ width: '100%', maxWidth: 380, background: 'linear-gradient(180deg, rgba(24,32,54,0.98), rgba(15,20,35,0.98))', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: 22, boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(59,130,246,0.2)' }}>
+                        <CalendarDays size={17} />
+                      </div>
+                      <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800, color: '#fff' }}>Огноо сонгох</h3>
+                    </div>
+                    <button onClick={() => setShowProgramDatePicker(false)}
+                      style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#9ca3af', width: 30, height: 30, borderRadius: 9, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <X size={15} />
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(15, 23, 42, 0.6)', padding: '5px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', marginBottom: 12 }}>
+                    <button onClick={() => setProgramDatePickerMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+                      style={{ background: 'none', border: 'none', color: '#9ca3af', padding: 6, borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center' }}><ChevronLeft size={16} /></button>
+                    <span style={{ fontWeight: 700, fontSize: '0.88rem', color: '#fff', letterSpacing: '0.3px' }}>
+                      {monthNames[programDatePickerMonth.getMonth()]} {programDatePickerMonth.getFullYear()}
+                    </span>
+                    <button onClick={() => setProgramDatePickerMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+                      style={{ background: 'none', border: 'none', color: '#9ca3af', padding: 6, borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center' }}><ChevronRight size={16} /></button>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 4 }}>
+                    {DAYS_SHORT.map(d => (
+                      <div key={d} style={{ textAlign: 'center', fontSize: '0.65rem', fontWeight: 700, color: '#6b7280', padding: '2px 0', textTransform: 'uppercase' }}>{d}</div>
+                    ))}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+                    {buildCalendarCells(programDatePickerMonth).map((cell, idx) => {
+                      const dateStr = ymd(cell.date)
+                      const isToday = dateStr === todayStr
+                      const isSelected = programForm.date_schedule.some(d => d.date === dateStr)
+                      return (
+                        <button key={idx} type="button"
+                          onClick={() => cell.inMonth && toggleProgramSpecificDate(dateStr)}
+                          disabled={!cell.inMonth}
+                          style={{
+                            aspectRatio: '1', minHeight: 36,
+                            background: isSelected ? '#3b82f6' : isToday ? 'rgba(59,130,246,0.08)' : 'rgba(10,14,26,0.3)',
+                            border: isSelected ? '1px solid #3b82f6' : isToday ? '1px solid rgba(59,130,246,0.4)' : '1px solid rgba(255,255,255,0.04)',
+                            borderRadius: 8, padding: '2px',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            cursor: cell.inMonth ? 'pointer' : 'default', opacity: cell.inMonth ? 1 : 0.3, transition: 'all .12s'
+                          }}>
+                          <span style={{ fontSize: '0.78rem', fontWeight: isSelected || isToday ? 800 : 600, color: isSelected ? '#fff' : isToday ? '#60a5fa' : cell.inMonth ? '#e5e7eb' : '#4b5563' }}>{cell.date.getDate()}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+                    <span style={{ flex: 1, fontSize: '0.8rem', color: '#9ca3af', display: 'flex', alignItems: 'center' }}>
+                      {programForm.date_schedule.length > 0 ? `${programForm.date_schedule.length} огноо сонгосон` : 'Огноо сонгоогүй байна'}
+                    </span>
+                    <button onClick={() => setShowProgramDatePicker(false)}
+                      style={{ background: '#3b82f6', color: '#fff', padding: '9px 20px', borderRadius: 10, border: 'none', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}>
+                      Дуусгах
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* List */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -835,6 +1266,20 @@ export default function Admin() {
                           <span style={{ color: TYPE_COLORS[p.type], fontWeight: 700 }}>{TYPE_LABELS[p.type]}</span>
                           <span><Clock size={11} style={{ display: 'inline', marginRight: 3 }} />{p.start_time}–{p.end_time}</span>
                           {p.location && <span><MapPin size={11} style={{ display: 'inline', marginRight: 3 }} />{p.location}</span>}
+                          {p.day_schedule && p.day_schedule.length > 0 && (
+                            <span style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                              {p.day_schedule.map(ds => (
+                                <span key={ds.day} title={`${ds.start_time}–${ds.end_time}`} style={{ background: 'rgba(59,130,246,0.12)', color: '#60a5fa', padding: '1px 6px', borderRadius: 6, fontSize: '0.7rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                  {DAYS_SHORT[jsDayToDayIdx(ds.day)]} {ds.start_time}
+                                </span>
+                              ))}
+                            </span>
+                          )}
+                          {p.date_schedule && p.date_schedule.length > 0 && (
+                            <span title={p.date_schedule.map(ds => `${ds.date} ${ds.start_time}–${ds.end_time}`).join(', ')} style={{ background: 'rgba(168,85,247,0.12)', color: '#c084fc', padding: '1px 6px', borderRadius: 6, fontSize: '0.7rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}>
+                              <CalendarDays size={10} /> {p.date_schedule.length} огноо
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1132,15 +1577,27 @@ export default function Admin() {
                     </h3>
                     <div style={{ display: 'flex', gap: 6, fontSize: '0.78rem', fontWeight: 700 }}>
                       <span style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '2px 8px', borderRadius: 6, border: '1px solid rgba(16, 185, 129, 0.15)' }}>
-                        ✓ {Object.values(attendanceMap).filter(s => s === 'present').length}
+                        ✓ {visibleAttendanceUsers.filter(u => attendanceMap[u.id] === 'present').length}
                       </span>
                       <span style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.1)', padding: '2px 8px', borderRadius: 6, border: '1px solid rgba(239, 68, 68, 0.15)' }}>
-                        ✗ {Object.values(attendanceMap).filter(s => s === 'absent').length}
+                        ✗ {visibleAttendanceUsers.filter(u => attendanceMap[u.id] === 'absent').length}
                       </span>
                       <span style={{ color: '#9ca3af', background: 'rgba(255, 255, 255, 0.05)', padding: '2px 8px', borderRadius: 6, border: '1px solid rgba(255, 255, 255, 0.06)' }}>
-                        ? {users.length - Object.values(attendanceMap).length}
+                        ? {visibleAttendanceUsers.filter(u => !attendanceMap[u.id]).length}
                       </span>
                     </div>
+                  </div>
+
+                  {/* Хөтөлбөрөөр шүүх — сонговол зөвхөн тэр хөтөлбөрт тухайн
+                      өдөр оноогдсон тоглогчид л жагсаалтад үлдэнэ */}
+                  <div style={{ marginBottom: 10 }}>
+                    <select value={attendanceProgramFilter} onChange={e => setAttendanceProgramFilter(e.target.value)}
+                      style={{ width: '100%', background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', color: attendanceProgramFilter ? '#60a5fa' : '#9ca3af', padding: '9px 12px', borderRadius: 10, fontSize: '0.83rem', fontWeight: 700, outline: 'none', boxSizing: 'border-box' }}>
+                      <option value="">Бүх тоглогч</option>
+                      {programs.map(p => (
+                        <option key={p.id} value={p.id}>🏐 {p.name}</option>
+                      ))}
+                    </select>
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(15, 23, 42, 0.5)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: '8px 12px', marginBottom: 14 }}>
@@ -1149,8 +1606,14 @@ export default function Admin() {
                       style={{ background: 'none', border: 'none', color: '#fff', fontSize: '0.85rem', outline: 'none', width: '100%' }} />
                   </div>
 
+                  {attendanceProgramFilter && visibleAttendanceUsers.length === 0 && (
+                    <p style={{ color: '#6b7280', fontSize: '0.82rem', padding: '8px 0 14px 0', textAlign: 'center' }}>
+                      Энэ хөтөлбөрт одоогоор хэн ч оноогдоогүй байна. (Schedule/Programs-с оноосон эсэхээ шалгаарай.)
+                    </p>
+                  )}
+
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 440, overflowY: 'auto', paddingRight: 4 }}>
-                    {users.filter(u => u.full_name?.toLowerCase().includes(attendanceSearch.toLowerCase())).map(u => {
+                    {visibleAttendanceUsers.map(u => {
                       const status = attendanceMap[u.id]
                       const handleToggleAttendance = (targetStatus: 'present' | 'absent') => {
                         if (status === targetStatus) markAttendance(u.id, 'unmarked')
@@ -1203,40 +1666,86 @@ export default function Admin() {
         {/* ══════════ ХЭРЭГЛЭГЧИЙН ЭРХ ══════════ */}
         {activeTab === 'users' && (
           <div>
-            <div style={{ marginBottom: 24 }}>
-              <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 28, marginBottom: 6 }}>Хэрэглэгчийн эрх</h2>
-              <p style={{ color: '#9ca3af', fontSize: '0.88rem' }}>Role өөрчлөх болон шинэ тоглогч урих.</p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 14, marginBottom: 24 }}>
+              <div>
+                <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 28, marginBottom: 6 }}>Хэрэглэгчийн эрх</h2>
+                <p style={{ color: '#9ca3af', fontSize: '0.88rem' }}>Role өөрчлөх болон шинэ хэрэглэгч үүсгэх.</p>
+              </div>
+              <button onClick={() => { setInviteResult(null); setShowCreateUserModal(true) }}
+                style={{ background: '#f97316', color: '#fff', padding: '11px 20px', borderRadius: 12, border: 'none', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', boxShadow: '0 4px 14px rgba(249,115,22,0.3)' }}>
+                <Plus size={16} /> Шинэ хэрэглэгч
+              </button>
             </div>
 
-            <div style={{ background: 'rgba(20,27,47,0.5)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 24, marginBottom: 28 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(249,115,22,0.12)', color: '#f97316', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(249,115,22,0.2)' }}>
-                  <Mail size={18} />
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#fff' }}>Шинэ хүн урих</h3>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#9ca3af' }}>И-мэйл хаягаар урилга илгээнэ</p>
+            {/* ── Шинэ хэрэглэгч үүсгэх modal ── */}
+            {showCreateUserModal && (
+              <div
+                onClick={() => !inviteSending && setShowCreateUserModal(false)}
+                style={{ position: 'fixed', inset: 0, background: 'rgba(5,8,18,0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
+                <div onClick={e => e.stopPropagation()}
+                  style={{ width: '100%', maxWidth: 440, background: 'linear-gradient(180deg, rgba(24,32,54,0.98), rgba(15,20,35,0.98))', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: 26, boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(249,115,22,0.12)', color: '#f97316', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(249,115,22,0.2)' }}>
+                        <Mail size={19} />
+                      </div>
+                      <div>
+                        <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>Шинэ хэрэглэгч үүсгэх</h3>
+                        <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: '#9ca3af' }}>Email илгээхгүй — нууц үгийг өөрөө дамжуулна</p>
+                      </div>
+                    </div>
+                    <button onClick={() => setShowCreateUserModal(false)} disabled={inviteSending}
+                      style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#9ca3af', width: 32, height: 32, borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <X size={16} />
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 6 }}>Нэр</label>
+                      <input type="text" placeholder="Баатар Дорж" value={inviteName} onChange={e => setInviteName(e.target.value)}
+                        style={{ width: '100%', background: 'rgba(5,8,18,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '11px 14px', borderRadius: 10, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 6 }}>И-мэйл хаяг</label>
+                      <input type="email" placeholder="email@example.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
+                        style={{ width: '100%', background: 'rgba(5,8,18,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '11px 14px', borderRadius: 10, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 6 }}>Нууц үг</label>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input type="text" placeholder="6+ тэмдэгт" value={invitePassword} onChange={e => setInvitePassword(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && sendInvite()}
+                          style={{ flex: 1, minWidth: 0, background: 'rgba(5,8,18,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '11px 14px', borderRadius: 10, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }} />
+                        <button type="button" onClick={generateInvitePassword} title="Санамсаргүй нууц үг үүсгэх"
+                          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#e5e7eb', padding: '0 16px', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontSize: '0.95rem', flexShrink: 0 }}>
+                          🎲
+                        </button>
+                      </div>
+                    </div>
+
+                    {inviteResult && (
+                      <div style={{ padding: '10px 14px', borderRadius: 10, background: inviteResult.type === 'success' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${inviteResult.type === 'success' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`, color: inviteResult.type === 'success' ? '#10b981' : '#ef4444', fontSize: '0.83rem', display: 'flex', alignItems: 'flex-start', gap: 8, lineHeight: 1.5 }}>
+                        {inviteResult.type === 'success' ? <Check size={15} style={{ flexShrink: 0, marginTop: 2 }} /> : <X size={15} style={{ flexShrink: 0, marginTop: 2 }} />}
+                        <span>{inviteResult.msg}</span>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                      <button onClick={() => setShowCreateUserModal(false)} disabled={inviteSending}
+                        style={{ flex: 1, background: 'rgba(255,255,255,0.05)', color: '#9ca3af', border: '1px solid rgba(255,255,255,0.08)', padding: '11px', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}>
+                        Хаах
+                      </button>
+                      <button onClick={sendInvite} disabled={inviteSending || !inviteEmail.trim() || !invitePassword.trim()}
+                        style={{ flex: 2, background: '#f97316', color: '#fff', padding: '11px', borderRadius: 10, border: 'none', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: '0.88rem', opacity: (!inviteEmail.trim() || !invitePassword.trim()) ? 0.5 : 1 }}>
+                        <Send size={15} />{inviteSending ? 'Үүсгэж байна...' : 'Хэрэглэгч үүсгэх'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <input type="text" placeholder="Нэр (ж: Баатар Дорж)" value={inviteName} onChange={e => setInviteName(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && sendInvite()}
-                  style={{ flex: '1 1 180px', background: 'rgba(5,8,18,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 16px', borderRadius: 10, fontSize: '0.9rem', outline: 'none' }} />
-                <input type="email" placeholder="Бүртгэл хийх и-мэйл хаяг" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && sendInvite()}
-                  style={{ flex: '2 1 240px', background: 'rgba(5,8,18,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 16px', borderRadius: 10, fontSize: '0.9rem', outline: 'none' }} />
-                <button onClick={sendInvite} disabled={inviteSending || !inviteEmail.trim()}
-                  style={{ background: '#f97316', color: '#fff', padding: '10px 20px', borderRadius: 10, border: 'none', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.88rem', opacity: !inviteEmail.trim() ? 0.5 : 1 }}>
-                  <Send size={15} />{inviteSending ? 'Илгээж...' : 'Урих'}
-                </button>
-              </div>
-              {inviteResult && (
-                <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 8, background: inviteResult.type === 'success' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${inviteResult.type === 'success' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`, color: inviteResult.type === 'success' ? '#10b981' : '#ef4444', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {inviteResult.type === 'success' ? <Check size={15} /> : <X size={15} />}
-                  {inviteResult.msg}
-                </div>
-              )}
-            </div>
+            )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '8px 14px', marginBottom: 16, maxWidth: 400 }}>
               <Search size={15} style={{ color: '#6b7280' }} />
@@ -1296,15 +1805,37 @@ export default function Admin() {
                   {/* Профайл дэлгэрэнгүй — багийн хуудсан дээр харагдах байрлал/дугаар/зураг */}
                   {isExpanded && (
                     <div style={{ padding: '4px 20px 18px 20px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 1.5fr auto', gap: 10, marginTop: 12, alignItems: 'center' }}>
+                      {/* Зураг — компьютер/утаснаас (камер эсвэл галерей) шууд сонгож upload хийнэ */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12, marginBottom: 12 }}>
+                        <div style={{ width: 56, height: 56, borderRadius: '50%', overflow: 'hidden', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          {profileDraft.avatar_url ? (
+                            <img src={profileDraft.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <User size={24} style={{ color: '#6b7280' }} />
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <label style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', color: '#60a5fa', padding: '7px 14px', borderRadius: 9, fontSize: '0.78rem', fontWeight: 700, cursor: avatarUploading === u.id ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, width: 'fit-content', opacity: avatarUploading === u.id ? 0.6 : 1 }}>
+                            <ImageIcon size={13} />
+                            {avatarUploading === u.id ? 'Ачааллаж байна...' : 'Зураг оруулах'}
+                            <input type="file" accept="image/*" disabled={avatarUploading === u.id} style={{ display: 'none' }}
+                              onChange={e => { const f = e.target.files?.[0]; if (f) uploadAvatar(u.id, f); e.target.value = '' }} />
+                          </label>
+                          {profileDraft.avatar_url && (
+                            <button type="button" onClick={() => setProfileDraft(d => ({ ...d, avatar_url: '' }))}
+                              style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline', textAlign: 'left', padding: 0, width: 'fit-content' }}>
+                              Зураг хасах
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px auto', gap: 10, alignItems: 'center' }}>
                         <input type="text" placeholder="Байрлал (ж: Setter, эсвэл Ерөнхий дасгалжуулагч)" value={profileDraft.position}
                           onChange={e => setProfileDraft(d => ({ ...d, position: e.target.value }))}
                           style={{ background: 'rgba(5,8,18,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '9px 12px', borderRadius: 10, fontSize: '0.85rem', outline: 'none' }} />
                         <input type="number" placeholder="Дугаар" value={profileDraft.jersey_number}
                           onChange={e => setProfileDraft(d => ({ ...d, jersey_number: e.target.value }))}
-                          style={{ background: 'rgba(5,8,18,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '9px 12px', borderRadius: 10, fontSize: '0.85rem', outline: 'none' }} />
-                        <input type="text" placeholder="Зургийн URL (https://...)" value={profileDraft.avatar_url}
-                          onChange={e => setProfileDraft(d => ({ ...d, avatar_url: e.target.value }))}
                           style={{ background: 'rgba(5,8,18,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '9px 12px', borderRadius: 10, fontSize: '0.85rem', outline: 'none' }} />
                         <button onClick={() => saveUserProfile(u.id, profileDraft)} disabled={profileSaving === u.id}
                           style={{ background: '#3b82f6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 10, fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>

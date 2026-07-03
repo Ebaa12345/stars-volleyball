@@ -24,15 +24,38 @@ export interface Profile {
   created_at: string
 }
 
+/** Долоо хоногийн нэг өдөр + тухайн өдрийн өөрийн гэсэн цаг (0=Ням...6=Бямба, JS Date.getDay()). */
+export interface ProgramDayTime {
+  day: number
+  start_time: string
+  end_time: string
+}
+
+/** Тодорхой нэг огноо + тухайн өдрийн өөрийн гэсэн цаг ('YYYY-MM-DD'). */
+export interface ProgramDateTime {
+  date: string
+  start_time: string
+  end_time: string
+}
+
 /** Админын урьдчилан тохируулдаг цагийн блокуудын каталог (ж: 14:00-16:00). */
 export interface Program {
   id: string
   name: string
+  /** Ерөнхий/анхны цаг — шинэ өдөр/огноо нэмэхэд эхний (default) утга болгож ашиглана. */
   start_time: string
   end_time: string
   location: string
   type: SessionType
   active: boolean
+  /** @deprecated day_schedule-ээр солигдсон. Хуучин өгөгдөл унших зорилгоор л үлдсэн. */
+  days_of_week?: number[]
+  /** Долоо хоногт давтагдах өдрүүд — өдөр тус бүр өөрийн гэсэн цагтай байж болно. */
+  day_schedule?: ProgramDayTime[]
+  /** @deprecated date_schedule-ээр солигдсон. Хуучин өгөгдөл унших зорилгоор л үлдсэн. */
+  specific_dates?: string[]
+  /** Admin бүтэн сарын хуанлиас сонгосон тодорхой огноонууд — огноо тус бүр өөрийн гэсэн цагтай байж болно. */
+  date_schedule?: ProgramDateTime[]
   created_at: string
 }
 
