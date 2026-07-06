@@ -71,6 +71,13 @@ export default function Admin() {
   const [selectedUser, setSelectedUser] = useState<ExtendedProfile | null>(null)
   const [roleUpdating, setRoleUpdating] = useState<string | null>(null)
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null)
+  const [cleanupLoading, setCleanupLoading] = useState(false)
+  const [showCleanupPanel, setShowCleanupPanel] = useState(false)
+  const [showCleanupMenu, setShowCleanupMenu] = useState(false)
+  const [openUserMenuId, setOpenUserMenuId] = useState<string | null>(null)
+  // Supabase Free (Nano) tier-ийн санал болгож буй дээд хэмжээ 500 MB
+  const [dbSizeBytes, setDbSizeBytes] = useState<number | null>(null)
+  const DB_LIMIT_BYTES = 500 * 1024 * 1024
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
   const [profileDraft, setProfileDraft] = useState<{ position: string; jersey_number: string; avatar_url: string }>({ position: '', jersey_number: '', avatar_url: '' })
   const [profileSaving, setProfileSaving] = useState<string | null>(null)
@@ -164,6 +171,14 @@ export default function Admin() {
   useEffect(() => { fetchThisMonthPresent() }, [])
   useEffect(() => { fetchAttendance() }, [attendanceDate])
   useEffect(() => { if (attendanceProgramFilter) fetchProgramMembers(attendanceProgramFilter); else setProgramMemberIds(null) }, [attendanceProgramFilter])
+  // Database-ийн одоогийн эзлэхүүнийг (Free tier 500MB-тай харьцуулах зорилгоор) татах
+  useEffect(() => {
+    async function fetchDbSize() {
+      const { data, error } = await supabase.rpc('admin_get_db_size')
+      if (!error && typeof data === 'number') setDbSizeBytes(data)
+    }
+    fetchDbSize()
+  }, [])
   useEffect(() => { fetchMonthAttendance(calendarMonth, setMonthAttendance) }, [calendarMonth])
   useEffect(() => { fetchMonthAttendance(attMonth, setAttMonthData) }, [attMonth])
   useEffect(() => { fetchMonthAssignments(calendarMonth) }, [calendarMonth])
@@ -573,6 +588,48 @@ export default function Admin() {
     }
   }
 
+  // Supabase Free tier-ийн 500MB хязгаарт хүрэхээс сэргийлж, хуучирсан
+  // (заасан сарын тооноос өмнөх) session_assignments болон attendance
+  // мөрүүдийг гараар цэвэрлэх. Эхлээд хэдэн мөр байгааг тоолж баталгаажуулж
+  // асуугаад, зөвшөөрсний дараа устгана.
+  async function cleanupOldData(monthsBack: number) {
+    const cutoffDate = new Date()
+    cutoffDate.setMonth(cutoffDate.getMonth() - monthsBack)
+    const cutoff = ymd(cutoffDate)
+    setCleanupLoading(true)
+    try {
+      const [{ count: schedCount }, { count: attCount }] = await Promise.all([
+        supabase.from('session_assignments').select('id', { count: 'exact', head: true }).lt('date', cutoff),
+        supabase.from('attendance').select('user_id', { count: 'exact', head: true }).lt('date', cutoff),
+      ])
+      const total = (schedCount || 0) + (attCount || 0)
+      if (total === 0) {
+        showToast(`${displayDate(cutoff)}-с өмнөх устгах өгөгдөл алга`)
+        setCleanupLoading(false)
+        return
+      }
+      if (!window.confirm(`${displayDate(cutoff)}-с ӨМНӨХ бүх хуваарь (${schedCount || 0} мөр) болон ирцийн (${attCount || 0} мөр) бүртгэл — нийт ${total} мөрийг бүрмөсөн устгах уу?\n\nЭнэ үйлдлийг буцаах боломжгүй бөгөөд эдгээр өдрүүдийн түүхэн ирц/хуваарь бүрэн устна.`)) {
+        setCleanupLoading(false)
+        return
+      }
+      const [{ error: e1 }, { error: e2 }] = await Promise.all([
+        supabase.from('session_assignments').delete().lt('date', cutoff),
+        supabase.from('attendance').delete().lt('date', cutoff),
+      ])
+      if (!e1 && !e2) {
+        showToast(`${total} хуучин мөр устгагдлаа ✓`)
+        fetchMonthAssignments(calendarMonth)
+        fetchMonthAttendance(calendarMonth, setMonthAttendance)
+        if (selectedUser) fetchUserAssignments(selectedUser.id, assignMonth)
+      } else {
+        showToast('Алдаа: ' + (e1?.message || e2?.message))
+      }
+    } catch (e: any) {
+      showToast('Алдаа: ' + (e?.message || 'Устгахад алдаа гарлаа.'))
+    }
+    setCleanupLoading(false)
+  }
+
   async function saveLimit() {
     if (!selectedUser) return
     const { error } = await supabase.from('profiles').update({ monthly_visit_limit: limitDraft }).eq('id', selectedUser.id)
@@ -836,7 +893,7 @@ export default function Admin() {
           {/* Sidebar nav */}
           <div style={{ background: 'rgba(20,27,47,0.45)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 10, position: 'sticky', top: 80 }}>
             {([
-              { key: 'schedule', label: 'Хянах самбар', icon: '📅' },
+              { key: 'schedule', label: 'Хуваарь оноох', icon: '📅' },
               { key: 'programs', label: 'Хөтөлбөрүүд', icon: '🗂' },
               { key: 'calendar', label: 'Нийт хуваарь', icon: '🗓' },
               { key: 'attendance', label: 'Ирц бүртгэл', icon: '✅' },
@@ -875,11 +932,11 @@ export default function Admin() {
 
             {/* User summary table — Явц = энэ сарын Ирсэн тоо / сарын лимит (удаа) */}
             <div style={{ overflowX: 'auto', background: 'rgba(20,27,47,0.45)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, marginBottom: 28 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+              <table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse', fontSize: '0.88rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                     {['Тоглогч', 'Role', 'Сарын лимит', 'Ирсэн (энэ сар)', 'Явц', ''].map(h => (
-                      <th key={h} style={{ padding: '12px 16px', textAlign: 'left', color: '#6b7280', fontWeight: 700, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+                      <th key={h} style={{ padding: '12px 16px', textAlign: 'left', color: '#6b7280', fontWeight: 700, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -893,25 +950,25 @@ export default function Admin() {
                     return (
                       <tr key={u.id} onClick={() => setSelectedUser(u)}
                         style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: isSel ? 'rgba(59,130,246,0.06)' : 'transparent', cursor: 'pointer' }}>
-                        <td style={{ padding: '14px 16px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <td style={{ padding: '14px 16px', maxWidth: 260 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                            <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                               <User size={16} style={{ color: '#6b7280' }} />
                             </div>
-                            <div>
-                              <div style={{ fontWeight: 700, color: '#fff' }}>{u.full_name}</div>
-                              <div style={{ fontSize: '0.78rem', color: '#6b7280' }}>{u.email}</div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.full_name}</div>
+                              <div style={{ fontSize: '0.78rem', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.email}</div>
                             </div>
                           </div>
                         </td>
-                        <td style={{ padding: '15px 16px' }}>
+                        <td style={{ padding: '14px 16px', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
                           <span style={{ display: 'inline-flex', flexShrink: 0, alignItems: 'center', flexWrap: 'nowrap', whiteSpace: 'nowrap', gap: 4, lineHeight: 1, fontSize: 11, fontWeight: 700, padding: '5px 10px', borderRadius: 10, background: u.role === 'admin' ? 'rgba(249,115,22,0.15)' : 'rgba(255,255,255,0.06)', color: u.role === 'admin' ? '#f97316' : '#9ca3af', border: `1px solid ${u.role === 'admin' ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.08)'}` }}>
                             <span style={{ lineHeight: 1 }}>{u.role === 'admin' ? '⚡' : '👤'}</span>
                             <span style={{ lineHeight: 1, whiteSpace: 'nowrap' }}>{u.role === 'admin' ? 'Admin' : 'User'}</span>
                           </span>
                         </td>
-                        <td style={{ padding: '14px 16px', color: '#e5e7eb', fontWeight: 600 }}>{limit} удаа</td>
-                        <td style={{ padding: '14px 16px', fontWeight: 700, color: sc }}>{visits} удаа</td>
+                        <td style={{ padding: '14px 16px', color: '#e5e7eb', fontWeight: 600, whiteSpace: 'nowrap' }}>{limit} удаа</td>
+                        <td style={{ padding: '14px 16px', fontWeight: 700, color: sc, whiteSpace: 'nowrap' }}>{visits} удаа</td>
                         <td style={{ padding: '14px 16px', width: 160 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <div style={{ flex: 1, height: 6, background: 'rgba(255,255,255,0.06)', borderRadius: 4, overflow: 'hidden' }}>
@@ -1179,32 +1236,13 @@ export default function Admin() {
                   "Хурдан оноолт"-оор энэ хөтөлбөрийг сарын тохирох бүх өдөрт нэг дор оноох боломжтой.
                   Өдөр тус бүрийг сонгосны дараа доор нь ГАРАХ цагийн талбараар өөрийн гэсэн цаг өгч болно
                   (анхны утга нь дээрх ерөнхий эхлэх/дуусах цаг). */}
-              <div style={{ marginTop: 14 }}>
-                
-           
-                  
-                {/* Сонгосон өдөр бүрийн өөрийн гэсэн цаг */}
-                {programForm.day_schedule.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
-                    {programForm.day_schedule.map(ds => (
-                      <div key={ds.day} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8, padding: '6px 10px' }}>
-                        <span style={{ width: 32, fontSize: '0.78rem', fontWeight: 700, color: '#60a5fa' }}>{DAYS_SHORT[jsDayToDayIdx(ds.day)]}</span>
-                        <input type="time" value={ds.start_time} onChange={e => updateProgramDayTime(ds.day, 'start_time', e.target.value)}
-                          style={{ background: 'rgba(5,8,18,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '5px 8px', borderRadius: 7, fontSize: '0.78rem', outline: 'none' }} />
-                        <span style={{ color: '#6b7280', fontSize: '0.75rem' }}>–</span>
-                        <input type="time" value={ds.end_time} onChange={e => updateProgramDayTime(ds.day, 'end_time', e.target.value)}
-                          style={{ background: 'rgba(5,8,18,0.6)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '5px 8px', borderRadius: 7, fontSize: '0.78rem', outline: 'none' }} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+        
 
               {/* Тодорхой огноонууд — бүтэн сарын хуанлиас шууд дарж сонгоно
                   (7 хоногийн давтамжгүй, зөвхөн тухайн өдрүүдэд л хамаарах бол) */}
               <div style={{ marginTop: 14 }}>
                 <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
-                  Тодорхой огноонууд (заавал биш)
+                  📅 Тодорхой огноонууд
                 </label>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                   <button type="button" onClick={() => { setProgramDatePickerMonth(new Date()); setShowProgramDatePicker(true) }}
@@ -1214,10 +1252,7 @@ export default function Admin() {
                   {programForm.date_schedule.length > 0 && (
                     <>
                       <span style={{ fontSize: '0.8rem', color: '#9ca3af' }}>{programForm.date_schedule.length} огноо сонгосон</span>
-                      <button type="button" onClick={() => setProgramForm(f => ({ ...f, date_schedule: [] }))}
-                        style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '0.78rem', cursor: 'pointer', textDecoration: 'underline' }}>
-                        Цэвэрлэх
-                      </button>
+                    
                     </>
                   )}
                 </div>
@@ -1620,7 +1655,7 @@ export default function Admin() {
                   <button
                     onClick={() => { setAttendanceDate(calendarSelectedDate); setActiveTab('attendance') }}
                     style={{ marginTop: 14, width: '100%', background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.3)', color: '#60a5fa', padding: '10px', borderRadius: 10, fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                    <ClipboardCheck size={15} /> Энэ өдрийн ирц харах
+                    <ClipboardCheck size={15} /> Энэ өдрийн ирц бүртгэх
                   </button>
                 </div>
               )}
@@ -1834,6 +1869,63 @@ export default function Admin() {
               </button>
             </div>
 
+            {/* ── Хуучин өгөгдөл цэвэрлэх (Supabase Free 500MB хязгаараас сэргийлэх) —
+                 үндсэн UI-г бөглөрүүлэхгүйн тулд эхэндээ хаалттай, жижиг disclosure
+                 хэлбэрээр нуугдмал байна. ── */}
+            {(() => {
+              const dbPct = dbSizeBytes !== null ? Math.min(100, (dbSizeBytes / DB_LIMIT_BYTES) * 100) : null
+              const dbMb = dbSizeBytes !== null ? dbSizeBytes / (1024 * 1024) : null
+              const dbColor = dbPct === null ? '#6b7280' : dbPct >= 80 ? '#ef4444' : dbPct >= 50 ? '#f59e0b' : '#10b981'
+              return (
+                <div style={{ marginBottom: 24 }}>
+                  <button type="button" onClick={() => setShowCleanupPanel(v => !v)}
+                    style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, padding: '4px 2px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.65rem', transform: showCleanupPanel ? 'rotate(90deg)' : 'none', transition: 'transform .15s', display: 'inline-block' }}>▶</span>
+                    <span>Санах хэмжээ</span>
+                    {dbMb !== null && dbPct !== null && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ width: 60, height: 5, background: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden', display: 'inline-block' }}>
+                          <span style={{ display: 'block', width: `${dbPct}%`, height: '100%', background: dbColor }} />
+                        </span>
+                        <span style={{ color: dbColor, fontWeight: 700 }}>{dbMb.toFixed(0)} MB / 500 MB ({dbPct.toFixed(0)}%)</span>
+                      </span>
+                    )}
+                  </button>
+                  {showCleanupPanel && (
+                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14, padding: 14, marginTop: 8, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {dbMb !== null && dbPct !== null && (
+                        <div>
+                          <div style={{ height: 8, background: 'rgba(255,255,255,0.06)', borderRadius: 4, overflow: 'hidden' }}>
+                            <div style={{ width: `${dbPct}%`, height: '100%', background: dbColor }} />
+                          </div>
+                          <p style={{ margin: '6px 0 0 0', fontSize: '0.78rem', color: dbColor, fontWeight: 700 }}>
+                            {dbMb.toFixed(1)} MB / 500 MB ашиглагдсан ({dbPct.toFixed(1)}%)
+                          </p>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                        <p style={{ margin: 0, fontSize: '0.78rem', color: '#9ca3af', maxWidth: 420 }}>2 сараас хуучирсан хуваарь болон ирцийн бүртгэлийг бүрмөсөн устгаж, database-ийн эзлэхүүнийг чөлөөлнө.</p>
+                        <div style={{ position: 'relative' }}>
+                          <button type="button" onClick={() => setShowCleanupMenu(v => !v)} title="Үйлдэл"
+                            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#9ca3af', width: 32, height: 32, borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', fontWeight: 800, letterSpacing: 1 }}>
+                            ⋯
+                          </button>
+                          {showCleanupMenu && (
+                            <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, boxShadow: '0 12px 30px rgba(0,0,0,0.45)', zIndex: 20, minWidth: 200, overflow: 'hidden' }}>
+                              <button onClick={() => { setShowCleanupMenu(false); cleanupOldData(2) }} disabled={cleanupLoading}
+                                style={{ width: '100%', background: 'none', border: 'none', color: '#ef4444', padding: '10px 14px', fontWeight: 700, fontSize: '0.8rem', cursor: cleanupLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 8, opacity: cleanupLoading ? 0.6 : 1, textAlign: 'left' }}>
+                                <Trash2 size={26} /> {cleanupLoading ? 'Шалгаж байна...' : 'Хуучин өгөгдөл устгах (2+ сар)'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
             {/* ── Шинэ хэрэглэгч үүсгэх modal ── */}
             {showCreateUserModal && (
               <div
@@ -1915,7 +2007,7 @@ export default function Admin() {
                 const roleColor = u.role === 'admin' ? '#f97316' : u.role === 'coach' ? '#a855f7' : '#6b7280'
                 const isExpanded = expandedUserId === u.id
                 return (
-                <div key={u.id} style={{ background: 'rgba(20,27,47,0.5)', border: isExpanded ? '1px solid rgba(59,130,246,0.3)' : '1px solid rgba(255,255,255,0.07)', borderRadius: 14, overflow: 'hidden' }}>
+                <div key={u.id} style={{ background: 'rgba(20,27,47,0.5)', border: isExpanded ? '1px solid rgba(59,130,246,0.3)' : '1px solid rgba(255,255,255,0.07)', borderRadius: 14, overflow: 'visible', position: 'relative', zIndex: openUserMenuId === u.id ? 30 : 'auto' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', flexWrap: 'wrap', gap: 12 }}>
                     <div onClick={() => toggleExpandUser(u)} style={{ display: 'flex', alignItems: 'center', gap: 14, cursor: 'pointer' }}>
                       <div style={{ width: 42, height: 42, borderRadius: '50%', overflow: 'hidden', background: u.role === 'admin' ? 'rgba(249,115,22,0.15)' : u.role === 'coach' ? 'rgba(168,85,247,0.15)' : 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${roleColor}66`, flexShrink: 0 }}>
@@ -1947,15 +2039,24 @@ export default function Admin() {
                           {roleUpdating === u.id ? '...' : '▼'}
                         </span>
                       </div>
-                      <button onClick={() => toggleExpandUser(u)} title="Профайл засах (байрлал, дугаар, зураг)"
-                        style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)', color: '#60a5fa', padding: '8px 10px', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                        <Pencil size={15} />
-                      </button>
-                      <button onClick={() => deleteUser(u.id, u.full_name)} disabled={deletingUserId === u.id}
-                        title="Хэрэглэгч устгах"
-                        style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444', padding: '8px 10px', borderRadius: 10, cursor: deletingUserId === u.id ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', opacity: deletingUserId === u.id ? 0.5 : 1 }}>
-                        <Trash2 size={15} />
-                      </button>
+                      <div style={{ position: 'relative' }}>
+                        <button type="button" onClick={() => setOpenUserMenuId(openUserMenuId === u.id ? null : u.id)} title="Үйлдэл"
+                          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#9ca3af', width: 34, height: 34, borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', fontWeight: 800, letterSpacing: 1 }}>
+                          ⋯
+                        </button>
+                        {openUserMenuId === u.id && (
+                          <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, boxShadow: '0 12px 30px rgba(0,0,0,0.45)', zIndex: 20, minWidth: 190, overflow: 'hidden' }}>
+                            <button onClick={() => { setOpenUserMenuId(null); toggleExpandUser(u) }}
+                              style={{ width: '100%', background: 'none', border: 'none', color: '#60a5fa', padding: '10px 14px', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' }}>
+                              <Pencil size={13} /> Профайл засах
+                            </button>
+                            <button onClick={() => { setOpenUserMenuId(null); deleteUser(u.id, u.full_name) }} disabled={deletingUserId === u.id}
+                              style={{ width: '100%', background: 'none', border: 'none', color: '#ef4444', padding: '10px 14px', fontWeight: 700, fontSize: '0.8rem', cursor: deletingUserId === u.id ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 8, opacity: deletingUserId === u.id ? 0.5 : 1, textAlign: 'left', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                              <Trash2 size={13} /> {deletingUserId === u.id ? 'Устгаж байна...' : 'Устгах'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1999,9 +2100,6 @@ export default function Admin() {
                           <Save size={13} /> {profileSaving === u.id ? '...' : 'Хадгалах'}
                         </button>
                       </div>
-                      <p style={{ margin: '10px 0 0 0', fontSize: '0.75rem', color: '#6b7280' }}>
-                        Дасгалжуулагчаар харуулахын тулд дээрх role-г "🏐 Coach" болгож, байрлал талбарт цол (ж: "Ерөнхий Дасгалжуулагч") бичнэ үү — Багийн хуудсан дээр шууд харагдана.
-                      </p>
                     </div>
                   )}
                 </div>

@@ -78,7 +78,7 @@ export default function Home() {
 
   // Stat картан бүрд өөрийн өнгө (glassmorphism icon glow-д ашиглана)
   const stats = [
-    { label: 'Хамрагчид', value: '100+', icon: Users, color: '#3b82f6' },
+    { label: 'Гишүүд', value: '100+', icon: Users, color: '#3b82f6' },
     { label: 'Улирлын бэлтгэл', value: '18', icon: Medal, color: '#f97316' },
     { label: 'Дасгалжуулагчид', value: '3', icon: GraduationCap, color: '#a855f7' },
     { label: 'Дасгалжуулалт / долоо хоног', value: '4', icon: Calendar, color: '#10b981' },
