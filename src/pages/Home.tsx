@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { Trophy, Users, Calendar, ChevronRight, GraduationCap, Stars, SportShoe, Medal } from 'lucide-react'
+import { Trophy, Users, Calendar, ChevronRight, GraduationCap, Stars, Medal } from 'lucide-react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { useRef } from 'react'
