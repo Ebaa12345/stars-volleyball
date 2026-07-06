@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { Trophy, Users, Calendar, ChevronRight, GraduationCap, Stars } from 'lucide-react'
+import { Trophy, Users, Calendar, ChevronRight, GraduationCap, Stars, SportShoe, Medal } from 'lucide-react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { useRef } from 'react'
@@ -78,10 +78,10 @@ export default function Home() {
 
   // Stat картан бүрд өөрийн өнгө (glassmorphism icon glow-д ашиглана)
   const stats = [
-    { label: 'Нийт тоглогч', value: '24', icon: Users, color: '#3b82f6' },
-    { label: 'Улирлын ялалт', value: '18', icon: Trophy, color: '#f97316' },
+    { label: 'Хамрагчид', value: '100+', icon: Users, color: '#3b82f6' },
+    { label: 'Улирлын бэлтгэл', value: '18', icon: Medal, color: '#f97316' },
     { label: 'Дасгалжуулагчид', value: '3', icon: GraduationCap, color: '#a855f7' },
-    { label: 'Дасгалжуулалт / долоо хоног', value: '5', icon: Calendar, color: '#10b981' },
+    { label: 'Дасгалжуулалт / долоо хоног', value: '4', icon: Calendar, color: '#10b981' },
   ]
 
   return (
