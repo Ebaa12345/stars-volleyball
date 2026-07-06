@@ -1,19 +1,72 @@
 import { useState } from 'react'
 import { MapPin, Phone, Send, Facebook, Instagram } from 'lucide-react'
+import emailjs from '@emailjs/browser'
+import { supabase } from '../lib/supabase'
+
+// ══════════════════════════════════════════════════════════════════
+// EmailJS тохиргоо — доорх 3 утгыг ӨӨРИЙН EmailJS акаунтаас аваад
+// солино уу (backend/Edge Function шаардахгүй, шууд client-с и-мэйл явна):
+//
+//   1. https://www.emailjs.com дээр (үнэгүй) бүртгүүлнэ.
+//   2. "Email Services" хэсэгт очиж Gmail (эсвэл өөр) акаунтаа холбоно
+//      → үүнээс гарах SERVICE_ID-г доор тавина.
+//   3. "Email Templates" хэсэгт шинэ template үүсгэнэ. Template-ийн бие
+//      дотор {{from_name}}, {{from_email}}, {{message}} гэсэн variable-үүдийг
+//      ашиглана (жишээ нь: "Илгээгч: {{from_name}} ({{from_email}})\n\n{{message}}")
+//      → үүнээс гарах TEMPLATE_ID-г доор тавина.
+//   4. "Account" → "General" хэсгээс Public Key-г аваад доор тавина.
+//
+// Гурвыг нь бөглөсний дараа санал хүсэлтийн формоос илгээсэн зурвас
+// шууд таны и-мэйл рүү очно.
+// ══════════════════════════════════════════════════════════════════
+const EMAILJS_SERVICE_ID = 'YOUR_SERVICE_ID'
+const EMAILJS_TEMPLATE_ID = 'YOUR_TEMPLATE_ID'
+const EMAILJS_PUBLIC_KEY = 'YOUR_PUBLIC_KEY'
 
 export default function Contact() {
   const [form, setForm] = useState({ name: '', email: '', message: '' })
   const [sent, setSent] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    // TODO: wire to Supabase or email service
-    setSent(true)
+    setErrorMsg('')
+    setSending(true)
+
+    // Хоёр сувгаар зэрэг явуулна: (1) EmailJS-ээр бодит и-мэйл рүү,
+    // (2) Supabase-д хадгалж Admin панелийн "Санал хүсэлт" таб-д харагдуулна.
+    // Аль нэг нь тохируулагдаагүй/алдаатай байсан ч нөгөө нь ажиллавал
+    // мессеж алдагдахгүй байхаар Promise.allSettled ашиглав.
+    const emailConfigured = EMAILJS_SERVICE_ID !== 'YOUR_SERVICE_ID'
+
+    const [emailResult, dbResult] = await Promise.allSettled([
+      emailConfigured
+        ? emailjs.send(
+            EMAILJS_SERVICE_ID,
+            EMAILJS_TEMPLATE_ID,
+            { from_name: form.name, from_email: form.email, message: form.message },
+            { publicKey: EMAILJS_PUBLIC_KEY }
+          )
+        : Promise.reject(new Error('EmailJS тохируулагдаагүй')),
+      supabase.from('contact_messages').insert({ name: form.name, email: form.email, message: form.message }),
+    ])
+
+    const dbOk = dbResult.status === 'fulfilled' && !(dbResult.value as any)?.error
+    const emailOk = emailResult.status === 'fulfilled'
+
+    if (dbOk || emailOk) {
+      setSent(true)
+      setForm({ name: '', email: '', message: '' })
+    } else {
+      setErrorMsg('Илгээхэд алдаа гарлаа. Дахин оролдоно уу.')
+    }
+    setSending(false)
   }
 
   const contactData = [
     { icon: MapPin, label: 'Хаяг', value: 'Улаанбаатар, Баянзүрх дүүрэг' },
-    { icon: Phone, label: 'Утас', value: '+976 9900-0000' },
+    { icon: Phone, label: 'Утас', value: '+976 9964-8404' },
     { icon: Facebook, label: 'Facebook', value: 'Stars Club', link: 'https://www.facebook.com/share/1DEA1YPbnn/?mibextid=wwXIfr' },
     { icon: Instagram, label: 'Instagram', value: 'Stars Club', link: 'https://www.instagram.com/stars_volleyballclub' },
   ]
@@ -34,11 +87,11 @@ export default function Contact() {
               // Хэрэв линктэй (Facebook, Instagram) бол дарагддаг <a> тег харуулна
               if (link) {
                 return (
-                  <a 
-                    key={label} 
-                    href={link} 
-                    target="_blank" 
-                    rel="noopener noreferrer" 
+                  <a
+                    key={label}
+                    href={link}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="contact-item contact-item-link"
                     style={{ textDecoration: 'none', color: 'inherit', display: 'flex' }}
                   >
@@ -87,7 +140,7 @@ export default function Contact() {
                   <label>И-мэйл</label>
                   <input
                     type="email"
-                    placeholder="sk21d032@student.humanities.mn"
+                    placeholder="Mail"
                     value={form.email}
                     onChange={e => setForm({ ...form, email: e.target.value })}
                     required
@@ -103,8 +156,11 @@ export default function Contact() {
                     required
                   />
                 </div>
-                <button type="submit" className="btn-primary">
-                  <Send size={16} /> Илгээх
+                {errorMsg && (
+                  <p style={{ color: '#ef4444', fontSize: '0.85rem', margin: '0 0 4px 0' }}>{errorMsg}</p>
+                )}
+                <button type="submit" className="btn-primary" disabled={sending}>
+                  <Send size={16} /> {sending ? 'Илгээж байна...' : 'Илгээх'}
                 </button>
               </form>
             )}

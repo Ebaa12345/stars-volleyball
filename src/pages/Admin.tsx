@@ -12,6 +12,15 @@ import {
 
 interface ExtendedProfile extends Profile {}
 
+interface ContactMessage {
+  id: string
+  name: string
+  email: string
+  message: string
+  is_read: boolean
+  created_at: string
+}
+
 const DAYS_SHORT = ['Да', 'Мя', 'Лх', 'Пү', 'Ба', 'Бя', 'Ня']
 const TYPES: SessionType[] = ['practice', 'match', 'training', 'rest']
 const TYPE_LABELS: Record<SessionType, string> = { practice: 'Дасгал', match: 'Тоглолт', training: 'Биеийн тамир', rest: 'Амралт' }
@@ -61,7 +70,7 @@ export default function Admin() {
   const { isAdmin, loading } = useAuth()
   const navigate = useNavigate()
 
-  const [activeTab, setActiveTab] = useState<'schedule' | 'programs' | 'calendar' | 'attendance' | 'users'>('schedule')
+  const [activeTab, setActiveTab] = useState<'schedule' | 'programs' | 'calendar' | 'attendance' | 'users' | 'contact'>('schedule')
 
   // Users
   const [users, setUsers] = useState<ExtendedProfile[]>([])
@@ -78,6 +87,10 @@ export default function Admin() {
   // Supabase Free (Nano) tier-ийн санал болгож буй дээд хэмжээ 500 MB
   const [dbSizeBytes, setDbSizeBytes] = useState<number | null>(null)
   const DB_LIMIT_BYTES = 500 * 1024 * 1024
+  // Contact.tsx-ийн "Санал хүсэлт" формоос ирсэн зурвасууд
+  const [contactMessages, setContactMessages] = useState<ContactMessage[]>([])
+  const [contactLoading, setContactLoading] = useState(false)
+  const unreadContactCount = contactMessages.filter(m => !m.is_read).length
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
   const [profileDraft, setProfileDraft] = useState<{ position: string; jersey_number: string; avatar_url: string }>({ position: '', jersey_number: '', avatar_url: '' })
   const [profileSaving, setProfileSaving] = useState<string | null>(null)
@@ -179,6 +192,34 @@ export default function Admin() {
     }
     fetchDbSize()
   }, [])
+
+  // Contact.tsx-ээс ирсэн санал хүсэлтийн зурвасууд — таб дэх "уншаагүй" тоог
+  // байнга харуулахын тулд эхлээд mount дээр нэг татаад, дараа нь тухайн таб
+  // руу орох бүрд дахин шинэчилнэ.
+  async function fetchContactMessages() {
+    setContactLoading(true)
+    const { data, error } = await supabase.from('contact_messages').select('*').order('created_at', { ascending: false })
+    if (!error) setContactMessages((data as ContactMessage[]) || [])
+    setContactLoading(false)
+  }
+  useEffect(() => { fetchContactMessages() }, [])
+  useEffect(() => { if (activeTab === 'contact') fetchContactMessages() }, [activeTab])
+
+  async function markContactRead(id: string, isRead: boolean) {
+    const { error } = await supabase.from('contact_messages').update({ is_read: isRead }).eq('id', id)
+    if (!error) setContactMessages(prev => prev.map(m => m.id === id ? { ...m, is_read: isRead } : m))
+  }
+
+  async function deleteContactMessage(id: string) {
+    if (!window.confirm('Энэ зурвасыг устгах уу?')) return
+    const { error } = await supabase.from('contact_messages').delete().eq('id', id)
+    if (!error) {
+      setContactMessages(prev => prev.filter(m => m.id !== id))
+      showToast('Зурвас устгагдлаа')
+    } else {
+      showToast('Алдаа: ' + error.message)
+    }
+  }
   useEffect(() => { fetchMonthAttendance(calendarMonth, setMonthAttendance) }, [calendarMonth])
   useEffect(() => { fetchMonthAttendance(attMonth, setAttMonthData) }, [attMonth])
   useEffect(() => { fetchMonthAssignments(calendarMonth) }, [calendarMonth])
@@ -898,6 +939,7 @@ export default function Admin() {
               { key: 'calendar', label: 'Нийт хуваарь', icon: '🗓' },
               { key: 'attendance', label: 'Ирц бүртгэл', icon: '✅' },
               { key: 'users', label: 'Хэрэглэгчид', icon: '👥' },
+              { key: 'contact', label: 'Санал хүсэлт', icon: '✉️' },
             ] as const).map(tab => (
               <button key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
@@ -913,6 +955,11 @@ export default function Admin() {
                 }}>
                 <span style={{ fontSize: '1rem' }}>{tab.icon}</span>
                 {tab.label}
+                {tab.key === 'contact' && unreadContactCount > 0 && (
+                  <span style={{ marginLeft: 'auto', background: '#ef4444', color: '#fff', fontSize: '0.68rem', fontWeight: 800, borderRadius: 10, padding: '1px 7px', minWidth: 18, textAlign: 'center' }}>
+                    {unreadContactCount}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -1236,13 +1283,13 @@ export default function Admin() {
                   "Хурдан оноолт"-оор энэ хөтөлбөрийг сарын тохирох бүх өдөрт нэг дор оноох боломжтой.
                   Өдөр тус бүрийг сонгосны дараа доор нь ГАРАХ цагийн талбараар өөрийн гэсэн цаг өгч болно
                   (анхны утга нь дээрх ерөнхий эхлэх/дуусах цаг). */}
-        
+            
 
               {/* Тодорхой огноонууд — бүтэн сарын хуанлиас шууд дарж сонгоно
                   (7 хоногийн давтамжгүй, зөвхөн тухайн өдрүүдэд л хамаарах бол) */}
               <div style={{ marginTop: 14 }}>
                 <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
-                  📅 Тодорхой огноонууд
+                  Тодорхой огноонууд 
                 </label>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                   <button type="button" onClick={() => { setProgramDatePickerMonth(new Date()); setShowProgramDatePicker(true) }}
@@ -1252,7 +1299,10 @@ export default function Admin() {
                   {programForm.date_schedule.length > 0 && (
                     <>
                       <span style={{ fontSize: '0.8rem', color: '#9ca3af' }}>{programForm.date_schedule.length} огноо сонгосон</span>
-                    
+                      <button type="button" onClick={() => setProgramForm(f => ({ ...f, date_schedule: [] }))}
+                        style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '0.78rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                        Цэвэрлэх
+                      </button>
                     </>
                   )}
                 </div>
@@ -1914,7 +1964,7 @@ export default function Admin() {
                             <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, boxShadow: '0 12px 30px rgba(0,0,0,0.45)', zIndex: 20, minWidth: 200, overflow: 'hidden' }}>
                               <button onClick={() => { setShowCleanupMenu(false); cleanupOldData(2) }} disabled={cleanupLoading}
                                 style={{ width: '100%', background: 'none', border: 'none', color: '#ef4444', padding: '10px 14px', fontWeight: 700, fontSize: '0.8rem', cursor: cleanupLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 8, opacity: cleanupLoading ? 0.6 : 1, textAlign: 'left' }}>
-                                <Trash2 size={26} /> {cleanupLoading ? 'Шалгаж байна...' : 'Хуучин өгөгдөл устгах (2+ сар)'}
+                                <Trash2 size={13} /> {cleanupLoading ? 'Шалгаж байна...' : '2 сараас хуучныг устгах'}
                               </button>
                             </div>
                           )}
@@ -2100,6 +2150,9 @@ export default function Admin() {
                           <Save size={13} /> {profileSaving === u.id ? '...' : 'Хадгалах'}
                         </button>
                       </div>
+                      <p style={{ margin: '10px 0 0 0', fontSize: '0.75rem', color: '#6b7280' }}>
+                        Дасгалжуулагчаар харуулахын тулд дээрх role-г "🏐 Coach" болгож, байрлал талбарт цол (ж: "Ерөнхий Дасгалжуулагч") бичнэ үү — Багийн хуудсан дээр шууд харагдана.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -2109,6 +2162,56 @@ export default function Admin() {
                 <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>Хэрэглэгч олдсонгүй</div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ══════════ САНАЛ ХҮСЭЛТ ══════════ */}
+        {activeTab === 'contact' && (
+          <div>
+            <div style={{ marginBottom: 24 }}>
+              <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 28, marginBottom: 6 }}>Санал хүсэлт</h2>
+              <p style={{ color: '#9ca3af', fontSize: '0.88rem' }}>Вэбсайтын "Холбоо барих" хуудаснаас ирсэн зурвасууд.</p>
+            </div>
+
+            {contactLoading ? (
+              <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>Ачааллаж байна...</div>
+            ) : contactMessages.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>Одоогоор зурвас алга.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {contactMessages.map(m => (
+                  <div key={m.id}
+                    onClick={() => !m.is_read && markContactRead(m.id, true)}
+                    style={{
+                      background: m.is_read ? 'rgba(20,27,47,0.4)' : 'rgba(59,130,246,0.06)',
+                      border: m.is_read ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(59,130,246,0.25)',
+                      borderRadius: 14, padding: '14px 18px', cursor: !m.is_read ? 'pointer' : 'default'
+                    }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                        {!m.is_read && <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#3b82f6', flexShrink: 0 }} />}
+                        <span style={{ fontWeight: 700, color: '#fff', fontSize: '0.92rem' }}>{m.name}</span>
+                        <span style={{ color: '#6b7280', fontSize: '0.8rem' }}>{m.email}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                        <span style={{ color: '#6b7280', fontSize: '0.75rem' }}>{new Date(m.created_at).toLocaleString('mn-MN')}</span>
+                        <button type="button" onClick={(e) => { e.stopPropagation(); markContactRead(m.id, !m.is_read) }}
+                          title={m.is_read ? 'Уншаагүй болгох' : 'Уншсан болгох'}
+                          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#9ca3af', padding: '5px 9px', borderRadius: 8, cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700 }}>
+                          {m.is_read ? '✓ Уншсан' : 'Уншаагүй'}
+                        </button>
+                        <button type="button" onClick={(e) => { e.stopPropagation(); deleteContactMessage(m.id) }}
+                          title="Устгах"
+                          style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444', padding: '6px 8px', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                    <p style={{ margin: '10px 0 0 0', color: '#d1d5db', fontSize: '0.86rem', whiteSpace: 'pre-wrap' }}>{m.message}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
           </div>
