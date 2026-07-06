@@ -52,7 +52,7 @@ export default function Login() {
           <span>Stars Volleyball</span>
         </div>
         <h1>Нэвтрэх</h1>
-        <p className="auth-sub">Хуваариа харахын тулд нэвтэрнэ үү</p>
+        
 
         {error && <div className="error-msg">{error}</div>}
         {resetSent && (

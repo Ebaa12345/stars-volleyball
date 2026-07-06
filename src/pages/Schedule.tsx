@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase, SessionAssignment, SessionType } from '../lib/supabase'
-import { Calendar, Clock, MapPin, ChevronLeft, ChevronRight, Gauge, CheckCircle2, XCircle, History } from 'lucide-react'
+import { Calendar, Clock, MapPin, ChevronLeft, ChevronRight, Gauge, CheckCircle2, XCircle, History, ListChecks } from 'lucide-react'
 
 const DAY_NAMES_SHORT = ['Да', 'Мя', 'Лх', 'Пү', 'Ба', 'Бя', 'Ня']
 const DAY_NAMES_FULL = ['Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба', 'Ням']
@@ -14,7 +14,12 @@ const TYPE_CONFIG: Record<SessionType, { label: string; color: string; bg: strin
   rest: { label: 'Амралт', color: '#6b7280', bg: 'rgba(107, 114, 128, 0.05)' },
 }
 
-function ymd(d: Date) { return d.toISOString().split('T')[0] }
+function ymd(d: Date) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 
 function displayDate(dateStr: string) {
   const [, m, d] = dateStr.split('-').map(Number)
@@ -52,6 +57,21 @@ export default function Schedule() {
   const [loading, setLoading] = useState(true)
   const [userLimit, setUserLimit] = useState(15) // Default 15 удаа/сар
   const [attMonthMap, setAttMonthMap] = useState<Record<string, 'present' | 'absent'>>({})
+  // program_id -> нэр. Тухайн бэлтгэл ямар хөтөлбөрт хамаарахыг (жишээ нь
+  // "1-р хөтөлбөр") тоглогчид өөрсдөд нь харуулахын тулд.
+  const [programNames, setProgramNames] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    async function loadPrograms() {
+      const { data } = await supabase.from('programs').select('id, name')
+      if (data) {
+        const map: Record<string, string> = {}
+        data.forEach((p: any) => { map[p.id] = p.name })
+        setProgramNames(map)
+      }
+    }
+    loadPrograms()
+  }, [])
 
   useEffect(() => {
     async function loadMonth() {
@@ -122,6 +142,10 @@ export default function Schedule() {
   assignments.forEach(a => { (assignmentsByDate[a.date] ||= []).push(a) })
   const sortedDates = Object.keys(assignmentsByDate).sort()
 
+  // Энэ сард ХАМРАГДАЖ буй хөтөлбөрүүд (нэг товч мэдээлэл болгож дээр нь харуулах)
+  const myProgramIds = Array.from(new Set(assignments.map(a => a.program_id).filter(Boolean))) as string[]
+  const myProgramNames = myProgramIds.map(id => programNames[id]).filter(Boolean)
+
   return (
     <div className="page">
       <div className="container" style={{ maxWidth: '1000px' }}>
@@ -140,6 +164,20 @@ export default function Schedule() {
             <button onClick={() => setViewMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><ChevronRight size={18} /></button>
           </div>
         </div>
+
+        {/* ХАМРАГДАЖ БУЙ ХӨТӨЛБӨРҮҮД — энэ сард ямар хөтөлбөрт (нэрээр) хамрагдаж байгааг харуулна */}
+        {myProgramNames.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.18)', borderRadius: 12, padding: '10px 16px', marginBottom: 20 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#93c5fd', fontSize: '0.82rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+              <ListChecks size={15} /> Миний хөтөлбөр:
+            </span>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {myProgramNames.map(name => (
+                <span key={name} style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa', padding: '3px 10px', borderRadius: 8, fontSize: '0.8rem', fontWeight: 700 }}>{name}</span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ЯВЦЫН ПРОГРЕСС КАРТ */}
         <div style={{
@@ -255,10 +293,14 @@ export default function Schedule() {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
                     {daySlots.map(slot => {
                       const cfg = TYPE_CONFIG[slot.type] || TYPE_CONFIG.practice
+                      const programName = slot.program_id ? programNames[slot.program_id] : undefined
                       return (
                         <div key={slot.id} style={{ borderLeft: `4px solid ${cfg.color}`, background: cfg.bg, padding: '14px', borderRadius: '4px 10px 10px 4px', borderTop: '1px solid rgba(255,255,255,0.02)', borderRight: '1px solid rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: 6 }}>
                             <span style={{ color: cfg.color, fontWeight: 700, fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{cfg.label}</span>
+                            {programName && (
+                              <span style={{ color: '#c084fc', background: 'rgba(168,85,247,0.12)', padding: '2px 8px', borderRadius: 7, fontSize: '0.72rem', fontWeight: 700 }}>{programName}</span>
+                            )}
                           </div>
                           {slot.type !== 'rest' && (
                             <>

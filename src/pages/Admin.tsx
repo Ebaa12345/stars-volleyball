@@ -26,7 +26,12 @@ function displayDate(dateStr: string) {
   const { month, day } = parseDateStr(dateStr)
   return `${month}/${day}`
 }
-function ymd(d: Date) { return d.toISOString().split('T')[0] }
+function ymd(d: Date) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 
 const monthNames = ['1-р сар', '2-р сар', '3-р сар', '4-р сар', '5-р сар', '6-р сар', '7-р сар', '8-р сар', '9-р сар', '10-р сар', '11-р сар', '12-р сар']
 
@@ -84,6 +89,12 @@ export default function Admin() {
   const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null)
   const [programAssignments, setProgramAssignments] = useState<SessionAssignment[]>([])
   const [programAssignmentsLoading, setProgramAssignmentsLoading] = useState(false)
+  // Programs tab дээрээс шууд ОЛОН хэрэглэгчийг сонгож, нэг дор энэ хөтөлбөрт оноох
+  const [bulkAssignUserIds, setBulkAssignUserIds] = useState<Set<string>>(new Set())
+  const [bulkAssigningProgram, setBulkAssigningProgram] = useState(false)
+  // Хэрэглэгч сонгох жагсаалтыг нэг товч/label дор нээгддэг dropdown болгосон
+  const [showBulkAssignPicker, setShowBulkAssignPicker] = useState(false)
+  const [bulkAssignSearch, setBulkAssignSearch] = useState('')
 
   // Хөтөлбөрийн форм дээрх "📅 Огноо сонгох" — бүтэн сарын хуанли гарч,
   // admin шууд огноо дараад сонгодог/цуцалдаг
@@ -552,12 +563,13 @@ export default function Admin() {
   }
 
   async function removeAssignment(id: string) {
-    if (!selectedUser) return
     const { error } = await supabase.from('session_assignments').delete().eq('id', id)
     if (!error) {
-      fetchUserAssignments(selectedUser.id, assignMonth)
+      if (selectedUser) fetchUserAssignments(selectedUser.id, assignMonth)
       fetchMonthAssignments(calendarMonth)
       showToast('Хуваарь устгагдлаа')
+    } else {
+      showToast('Алдаа: ' + error.message)
     }
   }
 
@@ -654,9 +666,23 @@ export default function Admin() {
     fetchPrograms()
   }
 
-  async function deleteProgram(id: string) {
+  // Хөтөлбөрийг устгахдаа, холбогдох session_assignments мөрүүдийг ЭХЛЭЭД
+  // өөрсдийг нь устгана — учир нь programs.id FK нь "on delete set null" тул
+  // хөтөлбөрийг эхэлж устгачихвал program_id багана нь null болоод, тэдгээр
+  // хуваарийг дараа нь олж устгах боломжгүй болно (Нийт хуваарь дээр "эзэнгүй"
+  // хэвээр үлдэнэ гэсэн үг).
+  async function deleteProgram(id: string, name?: string) {
+    if (!window.confirm(`${name ? `"${name}"` : 'Энэ'} хөтөлбөрийг устгах уу? Холбогдох бүх хуваарь (Нийт хуваарь дээрх) мөн бүрмөсөн устна. Энэ үйлдлийг буцаах боломжгүй.`)) return
+    await supabase.from('session_assignments').delete().eq('program_id', id)
     const { error } = await supabase.from('programs').delete().eq('id', id)
-    if (!error) { showToast('Хөтөлбөр устгагдлаа'); fetchPrograms() }
+    if (!error) {
+      showToast('Хөтөлбөр болон холбогдох хуваарь устгагдлаа')
+      fetchPrograms()
+      fetchMonthAssignments(calendarMonth)
+      if (selectedProgramId === id) setSelectedProgramId(null)
+    } else {
+      showToast('Алдаа: ' + error.message)
+    }
   }
 
   async function toggleProgramActive(p: Program) {
@@ -668,10 +694,92 @@ export default function Admin() {
   async function viewProgramUsers(programId: string) {
     if (selectedProgramId === programId) { setSelectedProgramId(null); return }
     setSelectedProgramId(programId)
+    setBulkAssignUserIds(new Set())
+    setShowBulkAssignPicker(false)
+    setBulkAssignSearch('')
+    await refetchProgramAssignments(programId)
+  }
+
+  async function refetchProgramAssignments(programId: string) {
     setProgramAssignmentsLoading(true)
     const { data } = await supabase.from('session_assignments').select('*').eq('program_id', programId).order('date', { ascending: false })
     setProgramAssignments((data as SessionAssignment[]) || [])
     setProgramAssignmentsLoading(false)
+  }
+
+  // Programs tab-с шууд ОЛОН хэрэглэгчийг сонгоод, тэдэнд бүгдэд нь энэ
+  // хөтөлбөрийг нэг товчлуураар оноох (Schedule tab-руу орж хүн бүрийг
+  // тусад нь дайрч "Хурдан оноолт" хийх шаардлагагүй болгоно).
+  //   - date_schedule (тодорхой огноонууд): АЛЬ Ч сар үл хамааран, бүгдийг оноодог.
+  //   - day_schedule (долоо хоногийн давтамж): өнөөдрөөс хойш ойролцоогоор 3 сарын
+  //     (92 өдөр) хугацаанд тохирох өдрүүдийг урьдчилан үүсгэж өгнө.
+  async function bulkAssignProgramToUsers(program: Program, userIds: string[]) {
+    if (userIds.length === 0) return
+    const daySchedule = program.day_schedule || []
+    const dateSchedule = program.date_schedule || []
+    if (daySchedule.length === 0 && dateSchedule.length === 0) {
+      showToast('Энэ хөтөлбөрт өдөр/огноо сонгогдоогүй байна. Дээрх "Хөтөлбөр засах" form-оор нэмнэ үү.')
+      return
+    }
+    setBulkAssigningProgram(true)
+
+    const targetDates = new Map<string, { start_time: string; end_time: string }>()
+    if (daySchedule.length > 0) {
+      const start = new Date()
+      for (let i = 0; i < 92; i++) {
+        const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i)
+        const match = daySchedule.find(ds => ds.day === date.getDay())
+        if (match) targetDates.set(ymd(date), { start_time: match.start_time, end_time: match.end_time })
+      }
+    }
+    dateSchedule.forEach(ds => targetDates.set(ds.date, { start_time: ds.start_time, end_time: ds.end_time }))
+
+    const rows: any[] = []
+    userIds.forEach(uid => {
+      targetDates.forEach((time, dateStr) => {
+        rows.push({
+          user_id: uid,
+          date: dateStr,
+          program_id: program.id,
+          start_time: time.start_time,
+          end_time: time.end_time,
+          location: program.location,
+          type: program.type,
+          notes: '',
+          created_by: 'admin',
+        })
+      })
+    })
+
+    const { error } = await supabase.from('session_assignments').upsert(rows, {
+      onConflict: 'user_id,date,start_time',
+      ignoreDuplicates: true,
+    })
+    if (!error) {
+      showToast(`${userIds.length} хэрэглэгчид "${program.name}" амжилттай оноолоо ✓ (${targetDates.size} огноо тус бүрд)`)
+      setBulkAssignUserIds(new Set())
+      setShowBulkAssignPicker(false)
+      refetchProgramAssignments(program.id)
+      fetchMonthAssignments(calendarMonth)
+    } else {
+      showToast('Алдаа: ' + error.message)
+    }
+    setBulkAssigningProgram(false)
+  }
+
+  // Хэрэглэгчийг энэ хөтөлбөрөөс БҮРЭН хасах — тухайн хэрэглэгчийн энэ
+  // program_id-тай холбоотой session_assignments мөрүүдийг бүгдийг устгана
+  // (өөр хөтөлбөр/дурын цагаар оноосон хуваарьд нь нөлөөлөхгүй).
+  async function removeUserFromProgram(programId: string, userId: string, userName: string, count: number) {
+    if (!window.confirm(`${userName}-г энэ хөтөлбөрөөс хасах уу? Холбогдох ${count} өдрийн хуваарь устна.`)) return
+    const { error } = await supabase.from('session_assignments').delete().eq('program_id', programId).eq('user_id', userId)
+    if (!error) {
+      showToast(`${userName}-г хөтөлбөрөөс хаслаа`)
+      refetchProgramAssignments(programId)
+      fetchMonthAssignments(calendarMonth)
+    } else {
+      showToast('Алдаа: ' + error.message)
+    }
   }
 
   const filteredUsers = users.filter(u =>
@@ -728,7 +836,7 @@ export default function Admin() {
           {/* Sidebar nav */}
           <div style={{ background: 'rgba(20,27,47,0.45)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 10, position: 'sticky', top: 80 }}>
             {([
-              { key: 'schedule', label: 'Хуваарь оноох', icon: '📅' },
+              { key: 'schedule', label: 'Хянах самбар', icon: '📅' },
               { key: 'programs', label: 'Хөтөлбөрүүд', icon: '🗂' },
               { key: 'calendar', label: 'Нийт хуваарь', icon: '🗓' },
               { key: 'attendance', label: 'Ирц бүртгэл', icon: '✅' },
@@ -796,10 +904,11 @@ export default function Admin() {
                             </div>
                           </div>
                         </td>
-                        <td style={{ padding: '14px 16px' }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 10, background: u.role === 'admin' ? 'rgba(249,115,22,0.15)' : 'rgba(255,255,255,0.06)', color: u.role === 'admin' ? '#f97316' : '#9ca3af', border: `1px solid ${u.role === 'admin' ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.08)'}`, display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
-  {u.role === 'admin' ? '⚡ Admin' : '👤 User'}
-</span>
+                        <td style={{ padding: '15px 16px' }}>
+                          <span style={{ display: 'inline-flex', flexShrink: 0, alignItems: 'center', flexWrap: 'nowrap', whiteSpace: 'nowrap', gap: 4, lineHeight: 1, fontSize: 11, fontWeight: 700, padding: '5px 10px', borderRadius: 10, background: u.role === 'admin' ? 'rgba(249,115,22,0.15)' : 'rgba(255,255,255,0.06)', color: u.role === 'admin' ? '#f97316' : '#9ca3af', border: `1px solid ${u.role === 'admin' ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.08)'}` }}>
+                            <span style={{ lineHeight: 1 }}>{u.role === 'admin' ? '⚡' : '👤'}</span>
+                            <span style={{ lineHeight: 1, whiteSpace: 'nowrap' }}>{u.role === 'admin' ? 'Admin' : 'User'}</span>
+                          </span>
                         </td>
                         <td style={{ padding: '14px 16px', color: '#e5e7eb', fontWeight: 600 }}>{limit} удаа</td>
                         <td style={{ padding: '14px 16px', fontWeight: 700, color: sc }}>{visits} удаа</td>
@@ -1071,33 +1180,9 @@ export default function Admin() {
                   Өдөр тус бүрийг сонгосны дараа доор нь ГАРАХ цагийн талбараар өөрийн гэсэн цаг өгч болно
                   (анхны утга нь дээрх ерөнхий эхлэх/дуусах цаг). */}
               <div style={{ marginTop: 14 }}>
-                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
-                  Долоо хоногийн давтамж (заавал биш)
-                </label>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {DAYS_SHORT.map((label, idx) => {
-                    const jsDay = dayIdxToJsDay(idx)
-                    const active = programForm.day_schedule.some(d => d.day === jsDay)
-                    return (
-                      <button key={idx} type="button" onClick={() => toggleProgramDay(jsDay)}
-                        style={{
-                          width: 42, height: 36, borderRadius: 9, fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
-                          background: active ? '#3b82f6' : 'rgba(255,255,255,0.05)',
-                          border: `1px solid ${active ? '#3b82f6' : 'rgba(255,255,255,0.1)'}`,
-                          color: active ? '#fff' : '#9ca3af', transition: 'all .12s',
-                        }}>
-                        {label}
-                      </button>
-                    )
-                  })}
-                  {programForm.day_schedule.length > 0 && (
-                    <button type="button" onClick={() => setProgramForm(f => ({ ...f, day_schedule: [] }))}
-                      style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '0.78rem', cursor: 'pointer', textDecoration: 'underline', marginLeft: 4 }}>
-                      Цэвэрлэх
-                    </button>
-                  )}
-                </div>
-
+                
+           
+                  
                 {/* Сонгосон өдөр бүрийн өөрийн гэсэн цаг */}
                 {programForm.day_schedule.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
@@ -1289,23 +1374,80 @@ export default function Admin() {
                         {p.active ? 'Идэвхтэй' : 'Идэвхгүй'}
                       </button>
                       <button onClick={() => editProgram(p)} style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)', color: '#60a5fa', padding: '6px 10px', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center' }}><Pencil size={13} /></button>
-                      <button onClick={() => deleteProgram(p.id)} style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444', padding: '6px 10px', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center' }}><Trash2 size={13} /></button>
+                      <button onClick={() => deleteProgram(p.id, p.name)} style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444', padding: '6px 10px', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center' }}><Trash2 size={13} /></button>
                     </div>
                   </div>
 
                   {/* Тухайн хөтөлбөрт хамрагдаж буй тоглогчид */}
                   {isExpanded && (
                     <div style={{ padding: '4px 18px 16px 18px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                      {/* Шинэ: олон хэрэглэгчийг НЭГ dropdown label дотроос сонгож энэ хөтөлбөрт оноох */}
+                      <div style={{ marginTop: 10, marginBottom: 14, background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: 12, padding: 12 }}>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#93c5fd', marginBottom: 8 }}>
+                          + Хэрэглэгч сонгож энэ хөтөлбөрт оноох
+                        </div>
+                        <div style={{ position: 'relative' }}>
+                          <button type="button" onClick={() => setShowBulkAssignPicker(v => !v)}
+                            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', color: bulkAssignUserIds.size > 0 ? '#fff' : '#9ca3af', padding: '9px 12px', borderRadius: 10, fontSize: '0.83rem', fontWeight: 600, cursor: 'pointer', boxSizing: 'border-box' }}>
+                            <span>{bulkAssignUserIds.size > 0 ? `${bulkAssignUserIds.size} хэрэглэгч сонгосон` : '— Хэрэглэгч сонгох —'}</span>
+                            <span style={{ color: '#6b7280', fontSize: '0.7rem', transform: showBulkAssignPicker ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>▼</span>
+                          </button>
+
+                          {showBulkAssignPicker && (
+                            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#0f172a', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 10, boxShadow: '0 12px 30px rgba(0,0,0,0.45)', zIndex: 20, padding: 10 }}>
+                              <input type="text" placeholder="Хэрэглэгч хайх..." value={bulkAssignSearch} onChange={e => setBulkAssignSearch(e.target.value)}
+                                style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '7px 10px', borderRadius: 8, fontSize: '0.8rem', outline: 'none', marginBottom: 8, boxSizing: 'border-box' }} />
+                              <div style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                {users.filter(u => u.full_name?.toLowerCase().includes(bulkAssignSearch.toLowerCase())).map(u => {
+                                  const checked = bulkAssignUserIds.has(u.id)
+                                  return (
+                                    <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 7, cursor: 'pointer', background: checked ? 'rgba(59,130,246,0.12)' : 'transparent' }}>
+                                      <input type="checkbox" checked={checked}
+                                        onChange={() => setBulkAssignUserIds(prev => {
+                                          const next = new Set(prev)
+                                          if (next.has(u.id)) next.delete(u.id); else next.add(u.id)
+                                          return next
+                                        })}
+                                        style={{ accentColor: '#3b82f6', width: 14, height: 14, cursor: 'pointer', flexShrink: 0 }} />
+                                      <span style={{ color: checked ? '#fff' : '#e5e7eb', fontSize: '0.83rem', fontWeight: checked ? 700 : 500 }}>{u.full_name}</span>
+                                    </label>
+                                  )
+                                })}
+                                {users.filter(u => u.full_name?.toLowerCase().includes(bulkAssignSearch.toLowerCase())).length === 0 && (
+                                  <span style={{ color: '#6b7280', fontSize: '0.78rem', padding: '6px 8px' }}>Олдсонгүй.</span>
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                                <button type="button" onClick={() => setShowBulkAssignPicker(false)}
+                                  style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: '#9ca3af', padding: '6px 12px', borderRadius: 8, fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}>
+                                  Хаах
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <button onClick={() => bulkAssignProgramToUsers(p, Array.from(bulkAssignUserIds))}
+                          disabled={bulkAssignUserIds.size === 0 || bulkAssigningProgram}
+                          style={{ background: '#3b82f6', color: '#fff', padding: '8px 16px', borderRadius: 9, border: 'none', fontWeight: 700, cursor: 'pointer', fontSize: '0.8rem', opacity: bulkAssignUserIds.size === 0 ? 0.5 : 1, marginTop: 10 }}>
+                          {bulkAssigningProgram ? 'Оноож байна...' : `Сонгосон${bulkAssignUserIds.size > 0 ? ` (${bulkAssignUserIds.size})` : ''} хэрэглэгчид оноох`}
+                        </button>
+                      </div>
+
                       {programAssignmentsLoading ? (
                         <p style={{ color: '#6b7280', fontSize: '0.82rem', padding: '10px 0' }}>Уншиж байна...</p>
                       ) : programAssignments.length === 0 ? (
                         <p style={{ color: '#6b7280', fontSize: '0.82rem', padding: '10px 0' }}>Энэ хөтөлбөрт одоогоор хэн ч оноогдоогүй байна.</p>
                       ) : (
                         (() => {
-                          const byUser: Record<string, { name: string; email: string; dates: string[] }> = {}
+                          // МУУХАЙ БАГ ЗАСВАР: өмнө нь key={r.name + r.email} ашигладаг байсан тул
+                          // ижил нэртэй (эсвэл хоёулаа email хоосон) хэрэглэгчид байвал React
+                          // key мөргөлдөж, зөвхөн НЭГ мөр л харагддаг байсан (өгөгдөл дата дээр
+                          // зөв хадгалагдсан ч UI дээр "алга болдог"). id-г key болгож засав.
+                          const byUser: Record<string, { id: string; name: string; email: string; dates: string[] }> = {}
                           programAssignments.forEach(a => {
                             const u = users.find(usr => usr.id === a.user_id)
-                            if (!byUser[a.user_id]) byUser[a.user_id] = { name: u?.full_name || 'Тодорхойгүй', email: u?.email || '', dates: [] }
+                            if (!byUser[a.user_id]) byUser[a.user_id] = { id: a.user_id, name: u?.full_name || 'Тодорхойгүй', email: u?.email || '', dates: [] }
                             byUser[a.user_id].dates.push(a.date)
                           })
                           const rows = Object.values(byUser).sort((a, b) => a.name.localeCompare(b.name))
@@ -1315,16 +1457,20 @@ export default function Admin() {
                                 {rows.length} тоглогч · нийт {programAssignments.length} удаа оноогдсон
                               </div>
                               {rows.map(r => (
-                                <div key={r.name + r.email} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(15,23,42,0.5)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: '8px 12px', gap: 10, flexWrap: 'wrap' }}>
+                                <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(15,23,42,0.5)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: '8px 12px', gap: 10, flexWrap: 'wrap' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                                     <User size={13} style={{ color: '#6b7280', flexShrink: 0 }} />
                                     <span style={{ color: '#fff', fontSize: '0.85rem', fontWeight: 600 }}>{r.name}</span>
                                   </div>
-                                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                  <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                                     {r.dates.slice(0, 8).map(d => (
                                       <span key={d} style={{ fontSize: '0.7rem', background: 'rgba(59,130,246,0.1)', color: '#60a5fa', padding: '2px 7px', borderRadius: 8, fontWeight: 600 }}>{displayDate(d)}</span>
                                     ))}
                                     {r.dates.length > 8 && <span style={{ fontSize: '0.7rem', color: '#6b7280' }}>+{r.dates.length - 8}</span>}
+                                    <button type="button" onClick={() => removeUserFromProgram(p.id, r.id, r.name, r.dates.length)} title="Энэ хөтөлбөрөөс хасах"
+                                      style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444', padding: '4px 6px', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0, marginLeft: 4 }}>
+                                      <Trash2 size={12} />
+                                    </button>
                                   </div>
                                 </div>
                               ))}
@@ -1380,17 +1526,27 @@ export default function Admin() {
                     const isSelected = calendarSelectedDate === dateStr
                     const att = monthAttendance[dateStr]
                     const scheduledCount = (monthAssignments[dateStr] || []).length
+                    const markedCount = att ? att.present + att.absent : 0
+                    const attState: 'none' | 'scheduled' | 'partial' | 'full' =
+                      scheduledCount === 0 ? 'none' : markedCount === 0 ? 'scheduled' : markedCount < scheduledCount ? 'partial' : 'full'
+                    const dotColor = attState === 'full' ? '#10b981' : attState === 'partial' ? '#f59e0b' : attState === 'scheduled' ? '#3b82f6' : null
+                    const dotTitle = attState === 'full' ? `${scheduledCount} хуваарьтай — ирц бүрэн бүртгэгдсэн (✓${att?.present || 0} ✗${att?.absent || 0})`
+                      : attState === 'partial' ? `${scheduledCount} хуваарьтай — ирц дутуу бүртгэгдсэн (${markedCount}/${scheduledCount})`
+                      : attState === 'scheduled' ? `${scheduledCount} хуваарьтай — ирц бүртгээгүй`
+                      : undefined
 
                     return (
                       <button key={idx}
                         onClick={() => cell.inMonth && setCalendarSelectedDate(isSelected ? null : dateStr)}
                         disabled={!cell.inMonth}
+                        title={dotTitle}
                         style={{
+                          position: 'relative',
                           aspectRatio: '1', minHeight: 64,
                           background: isSelected ? 'rgba(59,130,246,0.18)' : isToday ? 'rgba(59,130,246,0.08)' : 'rgba(10,14,26,0.3)',
                           border: isSelected ? '2px solid #3b82f6' : isToday ? '1px solid rgba(59,130,246,0.4)' : '1px solid rgba(255,255,255,0.04)',
                           borderRadius: 10, padding: '6px 4px',
-                          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', gap: 3,
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
                           cursor: cell.inMonth ? 'pointer' : 'default',
                           opacity: cell.inMonth ? 1 : 0.3,
                           transition: 'all .15s'
@@ -1398,20 +1554,8 @@ export default function Admin() {
                         <span style={{ fontSize: '0.85rem', fontWeight: isToday ? 800 : 600, color: isToday ? '#60a5fa' : cell.inMonth ? '#e5e7eb' : '#4b5563' }}>
                           {cell.date.getDate()}
                         </span>
-                        {cell.inMonth && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%', alignItems: 'center' }}>
-                            {scheduledCount > 0 && (
-                              <span style={{ fontSize: '0.6rem', background: 'rgba(59,130,246,0.15)', color: '#60a5fa', padding: '1px 5px', borderRadius: 6, fontWeight: 700 }}>
-                                {scheduledCount} хуваарь
-                              </span>
-                            )}
-                            {att && (att.present > 0 || att.absent > 0) && (
-                              <div style={{ display: 'flex', gap: 3 }}>
-                                {att.present > 0 && <span style={{ fontSize: '0.58rem', color: '#10b981', fontWeight: 700 }}>✓{att.present}</span>}
-                                {att.absent > 0 && <span style={{ fontSize: '0.58rem', color: '#ef4444', fontWeight: 700 }}>✗{att.absent}</span>}
-                              </div>
-                            )}
-                          </div>
+                        {cell.inMonth && dotColor && (
+                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor }} />
                         )}
                       </button>
                     )
@@ -1419,9 +1563,16 @@ export default function Admin() {
                 </div>
 
                 <div style={{ display: 'flex', gap: 16, marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.05)', flexWrap: 'wrap', fontSize: '0.78rem', color: '#9ca3af' }}>
-                  <span><span style={{ color: '#60a5fa', fontWeight: 700 }}>N хуваарь</span> = тэр өдөр хуваарьтай тоглогчдын тоо</span>
-                  <span><span style={{ color: '#10b981', fontWeight: 700 }}>✓N</span> = ирсэн</span>
-                  <span><span style={{ color: '#ef4444', fontWeight: 700 }}>✗N</span> = ирээгүй</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3b82f6', display: 'inline-block' }} /> хуваарьтай, ирц бүртгээгүй
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} /> ирц дутуу бүртгэгдсэн
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} /> ирц бүрэн бүртгэгдсэн
+                  </span>
+                  <span style={{ color: '#6b7280' }}>(өдрийг дарж дэлгэрэнгүйг харна)</span>
                 </div>
               </div>
 
@@ -1443,13 +1594,19 @@ export default function Admin() {
                       const attStatus = monthAttendance[calendarSelectedDate!]?.userMap[a.user_id]
                       return (
                         <div key={a.id} style={{ background: attStatus === 'present' ? 'rgba(16,185,129,0.06)' : attStatus === 'absent' ? 'rgba(239,68,68,0.06)' : 'rgba(10,14,26,0.4)', border: `1px solid ${attStatus === 'present' ? 'rgba(16,185,129,0.2)' : attStatus === 'absent' ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.06)'}`, borderRadius: 10, padding: 10 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 6 }}>
                             <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff' }}>{u?.full_name || 'Тодорхойгүй'}</div>
-                            <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 8,
-                              background: attStatus === 'present' ? 'rgba(16,185,129,0.15)' : attStatus === 'absent' ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.06)',
-                              color: attStatus === 'present' ? '#10b981' : attStatus === 'absent' ? '#ef4444' : '#9ca3af' }}>
-                              {attStatus === 'present' ? '✓ Ирсэн' : attStatus === 'absent' ? '✗ Ирээгүй' : '? Тэмдэглээгүй'}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 8,
+                                background: attStatus === 'present' ? 'rgba(16,185,129,0.15)' : attStatus === 'absent' ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.06)',
+                                color: attStatus === 'present' ? '#10b981' : attStatus === 'absent' ? '#ef4444' : '#9ca3af' }}>
+                                {attStatus === 'present' ? '✓ Ирсэн' : attStatus === 'absent' ? '✗ Ирээгүй' : '? Тэмдэглээгүй'}
+                              </span>
+                              <button type="button" onClick={() => { if (window.confirm(`${u?.full_name || 'Энэ'} хэрэглэгчийн энэ өдрийн хуваарийг устгах уу?`)) removeAssignment(a.id) }} title="Энэ хуваарийг устгах"
+                                style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444', padding: '4px 6px', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
                           </div>
                           <div style={{ borderLeft: `3px solid ${TYPE_COLORS[a.type]}`, paddingLeft: 8 }}>
                             <span style={{ fontSize: '0.72rem', fontWeight: 700, color: TYPE_COLORS[a.type] }}>{TYPE_LABELS[a.type]}</span>
@@ -1463,7 +1620,7 @@ export default function Admin() {
                   <button
                     onClick={() => { setAttendanceDate(calendarSelectedDate); setActiveTab('attendance') }}
                     style={{ marginTop: 14, width: '100%', background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.3)', color: '#60a5fa', padding: '10px', borderRadius: 10, fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                    <ClipboardCheck size={15} /> Энэ өдрийн ирц бүртгэх
+                    <ClipboardCheck size={15} /> Энэ өдрийн ирц харах
                   </button>
                 </div>
               )}

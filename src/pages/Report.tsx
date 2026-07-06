@@ -47,7 +47,8 @@ export default function Report() {
   const year = reportMonth.getFullYear()
   const monthIdx = reportMonth.getMonth()
   const monthDates = buildMonthDates(year, monthIdx)
-  const today = new Date().toISOString().split('T')[0]
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const pastDates = monthDates.filter(d => d <= today)
 
   useEffect(() => {
@@ -69,6 +70,8 @@ export default function Report() {
           supabase.from('profiles').select('id, full_name, email, role, monthly_visit_limit').eq('id', user.id).single()
         ])
         setAttendance((attData as AttendanceRow[]) || [])
+        // Админ бус хэрэглэгчийн хувьд ч гэсэн өөрийн мөрийг profiles-д тавьж өгнө —
+        // үгүй бол доорх жагсаалт хоосон гарч, тайлан огт харагдахгүй байсан алдаа байсан.
         setProfiles(myProfile ? [myProfile as ProfileRow] : [{ id: user.id, full_name: 'Би', email: user.email || '', role: 'user', monthly_visit_limit: 15 }])
       }
       setLoading(false)
@@ -76,6 +79,7 @@ export default function Report() {
     load()
   }, [reportMonth, isAdmin, user])
 
+  // ── Build lookup: userId → date → status ──
   const lookup: Record<string, Record<string, 'present' | 'absent'>> = {}
   attendance.forEach(row => {
     if (!lookup[row.user_id]) lookup[row.user_id] = {}
@@ -86,6 +90,9 @@ export default function Report() {
     ? (selectedUser === 'all' ? profiles : profiles.filter(p => p.id === selectedUser))
     : profiles
 
+  // ── Stats per user: "Лимитийн явц %" = энэ сарын Ирсэн тоо / сарын лимит (удаа) ──
+  // (Хуучин хувилбарт энэ хувь нь "Ирсэн / өнгөрсөн өдрүүд" гэж тооцогддог байсан бөгөөд
+  // энэ нь Schedule/Admin дээрх сарын лимитийн тооцооноос өөр байсан — эндээс зөрчил гардаг байлаа.)
   function userStats(userId: string, limit: number) {
     const map = lookup[userId] || {}
     const present = pastDates.filter(d => map[d] === 'present').length
@@ -95,6 +102,7 @@ export default function Report() {
     return { present, absent, unmarked, pct }
   }
 
+  // ── CSV Export ──
   function exportCSV() {
     const rows: string[][] = []
     const header = ['Нэр', 'И-мэйл', 'Сарын лимит', ...pastDates.map(d => `${d}(${dayOfWeekLabel(d)})`), 'Ирсэн', 'Ирээгүй', 'Лимитийн явц%']
@@ -110,7 +118,7 @@ export default function Report() {
     })
 
     const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n')
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -118,6 +126,8 @@ export default function Report() {
     a.click()
     URL.revokeObjectURL(url)
   }
+
+  const C = { present: '#10b981', absent: '#ef4444', unmarked: '#374151' }
 
   return (
     <div className="page">
@@ -133,6 +143,7 @@ export default function Report() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            {/* Month nav */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(0,0,0,0.3)', padding: '8px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.08)' }}>
               <button onClick={() => setReportMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
                 style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}><ChevronLeft size={18} /></button>
@@ -206,6 +217,7 @@ export default function Report() {
               </div>
             ) : null}
 
+            {/* Detail table per user */}
             {displayProfiles.map(p => {
               const map = lookup[p.id] || {}
               const limit = p.monthly_visit_limit || 15
@@ -254,14 +266,15 @@ export default function Report() {
                     <div style={{ width: `${pct}%`, height: '100%', background: sc, transition: 'width .5s' }} />
                   </div>
 
-                  {/* Calendar heatmap - Жижигсгэсэн хувилбар */}
+                  {/* Calendar heatmap */}
                   <div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginBottom: 4 }}>
                       {DAY_NAMES.map(d => (
-                        <div key={d} style={{ textAlign: 'center', fontSize: '0.62rem', fontWeight: 700, color: '#6b7280' }}>{d}</div>
+                        <div key={d} style={{ textAlign: 'center', fontSize: '0.65rem', fontWeight: 700, color: '#6b7280' }}>{d}</div>
                       ))}
                     </div>
                     {(() => {
+                      // Build full calendar cells for month
                       const firstD = new Date(year, monthIdx, 1)
                       const startWD = (firstD.getDay() + 6) % 7
                       const cells: { dateStr: string | null }[] = []
@@ -269,7 +282,7 @@ export default function Report() {
                       monthDates.forEach(d => cells.push({ dateStr: d }))
                       while (cells.length % 7 !== 0) cells.push({ dateStr: null })
                       return (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
                           {cells.map((cell, idx) => {
                             if (!cell.dateStr) return <div key={idx} />
                             const s = map[cell.dateStr]
@@ -279,16 +292,16 @@ export default function Report() {
                             return (
                               <div key={idx} title={`${cell.dateStr} — ${s === 'present' ? 'Ирсэн' : s === 'absent' ? 'Ирээгүй' : 'Тэмдэглээгүй'}`}
                                 style={{
-                                  aspectRatio: '1', borderRadius: 5, minHeight: 28, // Өндрийг 36-аас 28 болгож багасгав
+                                  aspectRatio: '1', borderRadius: 6, minHeight: 36,
                                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1,
-                                  background: isFuture ? 'rgba(0,0,0,0.06)' : s === 'present' ? 'rgba(16,185,129,0.15)' : s === 'absent' ? 'rgba(239,68,68,0.12)' : 'rgba(255,255,255,0.02)',
-                                  border: isToday ? '1.5px solid rgba(59,130,246,0.5)' : s === 'present' ? '1px solid rgba(16,185,129,0.3)' : s === 'absent' ? '1px solid rgba(239,68,68,0.2)' : '1px solid rgba(255,255,255,0.03)',
+                                  background: isFuture ? 'rgba(0,0,0,0.1)' : s === 'present' ? 'rgba(16,185,129,0.18)' : s === 'absent' ? 'rgba(239,68,68,0.14)' : 'rgba(255,255,255,0.03)',
+                                  border: isToday ? '1.5px solid rgba(59,130,246,0.5)' : s === 'present' ? '1px solid rgba(16,185,129,0.35)' : s === 'absent' ? '1px solid rgba(239,68,68,0.25)' : '1px solid rgba(255,255,255,0.04)',
                                 }}>
-                                <span style={{ fontSize: '0.62rem', fontWeight: 600, color: isFuture ? '#374151' : s === 'present' ? '#6ee7b7' : s === 'absent' ? '#fca5a5' : '#4b5563', lineHeight: 1 }}>{dayNum}</span>
+                                <span style={{ fontSize: '0.68rem', fontWeight: 600, color: isFuture ? '#374151' : s === 'present' ? '#6ee7b7' : s === 'absent' ? '#fca5a5' : '#4b5563' }}>{dayNum}</span>
                                 {!isFuture && (
-                                  s === 'present' ? <CheckCircle2 size={9} style={{ color: '#10b981' }} /> :
-                                  s === 'absent' ? <XCircle size={9} style={{ color: '#ef4444' }} /> :
-                                  <span style={{ width: 4, height: 4, borderRadius: '50%', border: '1px dashed #374151' }} />
+                                  s === 'present' ? <CheckCircle2 size={11} style={{ color: '#10b981' }} /> :
+                                  s === 'absent' ? <XCircle size={11} style={{ color: '#ef4444' }} /> :
+                                  <span style={{ width: 6, height: 6, borderRadius: '50%', border: '1px dashed #374151' }} />
                                 )}
                               </div>
                             )

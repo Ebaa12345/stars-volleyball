@@ -48,7 +48,7 @@ function AppRoutes() {
       </div>
       <footer className="footer">
         <div className="container">
-          <span>© 2024 VolleyMN Club. Бүх эрх хуулиар хамгаалагдсан.</span>
+          <span></span>
         </div>
       </footer>
     </BrowserRouter>

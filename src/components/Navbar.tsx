@@ -91,8 +91,8 @@ export default function Navbar() {
             </>
           ) : (
             <>
-              <Link to="/login" className="mobile-link" onClick={() => setOpen(false)}>Нэвтрэх</Link>
-              <Link to="/signup" className="mobile-link highlight" onClick={() => setOpen(false)}>Бүртгүүлэх</Link>
+              <Link to="/login" className="mobile-link highlight" onClick={() => setOpen(false)}>Нэвтрэх</Link>
+              
             </>
           )}
         </div>
