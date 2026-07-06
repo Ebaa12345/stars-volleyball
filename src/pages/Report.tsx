@@ -43,6 +43,10 @@ export default function Report() {
   const [profiles, setProfiles] = useState<ProfileRow[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedUser, setSelectedUser] = useState<string | 'all'>('all')
+  // Хэрэглэгч тус бүрийн сарын календарь/жагсаалт хэсгийг хаах-нээх
+  // (өгөгдсөн олон хэрэглэгчийн хувьд бүгдийг нэг дор дэлгэсэн байвал хуудас
+  // хэт урт, эмх замбараагүй харагддаг байсныг засав)
+  const [expandedReportId, setExpandedReportId] = useState<string | null>(null)
 
   const year = reportMonth.getFullYear()
   const monthIdx = reportMonth.getMonth()
@@ -136,10 +140,9 @@ export default function Report() {
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, flexWrap: 'wrap', gap: 14 }}>
           <div>
-            <span className="eyebrow">Тайлан</span>
             <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 40, margin: 0 }}>Ирцийн тайлан</h1>
             <p style={{ color: '#9ca3af', marginTop: 4 }}>
-              {MONTH_NAMES[monthIdx]} {year} — нийт {pastDates.length} өдөр бүртгэгдсэн. Хувь нь сарын лимит (удаа) дээр суурилна.
+            {year}  {MONTH_NAMES[monthIdx]}ын {pastDates.length} ний өдөр
             </p>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -223,17 +226,26 @@ export default function Report() {
               const limit = p.monthly_visit_limit || 15
               const { present, absent, unmarked, pct } = userStats(p.id, limit)
               const sc = pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444'
+              // Зөвхөн нэг хэрэглэгч харагдаж байвал (шүүлт хийсэн, эсвэл admin биш үед)
+              // хаах-нээх шаардлагагүй тул автоматаар дэлгэсэн харагдана.
+              const isExpanded = displayProfiles.length === 1 ? true : expandedReportId === p.id
 
               return (
                 <div key={p.id} style={{ background: 'rgba(20,27,47,0.45)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: '20px 22px', marginBottom: 20 }}>
                   {/* User header */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexWrap: 'wrap', gap: 12 }}>
+                  <div onClick={() => displayProfiles.length > 1 && setExpandedReportId(expandedReportId === p.id ? null : p.id)}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isExpanded ? 18 : 0, flexWrap: 'wrap', gap: 12, cursor: displayProfiles.length > 1 ? 'pointer' : 'default' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <div style={{ width: 42, height: 42, borderRadius: '50%', background: `${sc}15`, border: `2px solid ${sc}40`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <User size={18} style={{ color: sc }} />
                       </div>
                       <div>
-                        <div style={{ fontWeight: 800, color: '#fff', fontSize: '1rem' }}>{p.full_name}</div>
+                        <div style={{ fontWeight: 800, color: '#fff', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {p.full_name}
+                          {displayProfiles.length > 1 && (
+                            <span style={{ color: isExpanded ? '#60a5fa' : '#4b5563', fontSize: '0.65rem', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>▼</span>
+                          )}
+                        </div>
                         <div style={{ fontSize: '0.78rem', color: '#6b7280' }}>{p.email}</div>
                       </div>
                     </div>
@@ -261,81 +273,85 @@ export default function Report() {
                     </div>
                   </div>
 
-                  {/* Progress bar */}
-                  <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden', marginBottom: 18 }}>
-                    <div style={{ width: `${pct}%`, height: '100%', background: sc, transition: 'width .5s' }} />
-                  </div>
+                  {isExpanded && (
+                    <>
+                      {/* Progress bar */}
+                      <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden', marginBottom: 18 }}>
+                        <div style={{ width: `${pct}%`, height: '100%', background: sc, transition: 'width .5s' }} />
+                      </div>
 
-                  {/* Calendar heatmap */}
-                  <div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginBottom: 4 }}>
-                      {DAY_NAMES.map(d => (
-                        <div key={d} style={{ textAlign: 'center', fontSize: '0.65rem', fontWeight: 700, color: '#6b7280' }}>{d}</div>
-                      ))}
-                    </div>
-                    {(() => {
-                      // Build full calendar cells for month
-                      const firstD = new Date(year, monthIdx, 1)
-                      const startWD = (firstD.getDay() + 6) % 7
-                      const cells: { dateStr: string | null }[] = []
-                      for (let i = 0; i < startWD; i++) cells.push({ dateStr: null })
-                      monthDates.forEach(d => cells.push({ dateStr: d }))
-                      while (cells.length % 7 !== 0) cells.push({ dateStr: null })
-                      return (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
-                          {cells.map((cell, idx) => {
-                            if (!cell.dateStr) return <div key={idx} />
-                            const s = map[cell.dateStr]
-                            const isFuture = cell.dateStr > today
-                            const isToday = cell.dateStr === today
-                            const dayNum = parseInt(cell.dateStr.split('-')[2])
-                            return (
-                              <div key={idx} title={`${cell.dateStr} — ${s === 'present' ? 'Ирсэн' : s === 'absent' ? 'Ирээгүй' : 'Тэмдэглээгүй'}`}
-                                style={{
-                                  aspectRatio: '1', borderRadius: 6, minHeight: 36,
-                                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1,
-                                  background: isFuture ? 'rgba(0,0,0,0.1)' : s === 'present' ? 'rgba(16,185,129,0.18)' : s === 'absent' ? 'rgba(239,68,68,0.14)' : 'rgba(255,255,255,0.03)',
-                                  border: isToday ? '1.5px solid rgba(59,130,246,0.5)' : s === 'present' ? '1px solid rgba(16,185,129,0.35)' : s === 'absent' ? '1px solid rgba(239,68,68,0.25)' : '1px solid rgba(255,255,255,0.04)',
-                                }}>
-                                <span style={{ fontSize: '0.68rem', fontWeight: 600, color: isFuture ? '#374151' : s === 'present' ? '#6ee7b7' : s === 'absent' ? '#fca5a5' : '#4b5563' }}>{dayNum}</span>
-                                {!isFuture && (
-                                  s === 'present' ? <CheckCircle2 size={11} style={{ color: '#10b981' }} /> :
-                                  s === 'absent' ? <XCircle size={11} style={{ color: '#ef4444' }} /> :
-                                  <span style={{ width: 6, height: 6, borderRadius: '50%', border: '1px dashed #374151' }} />
-                                )}
-                              </div>
-                            )
-                          })}
+                      {/* Calendar heatmap */}
+                      <div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginBottom: 4 }}>
+                          {DAY_NAMES.map(d => (
+                            <div key={d} style={{ textAlign: 'center', fontSize: '0.65rem', fontWeight: 700, color: '#6b7280' }}>{d}</div>
+                          ))}
                         </div>
-                      )
-                    })()}
-                  </div>
+                        {(() => {
+                          // Build full calendar cells for month
+                          const firstD = new Date(year, monthIdx, 1)
+                          const startWD = (firstD.getDay() + 6) % 7
+                          const cells: { dateStr: string | null }[] = []
+                          for (let i = 0; i < startWD; i++) cells.push({ dateStr: null })
+                          monthDates.forEach(d => cells.push({ dateStr: d }))
+                          while (cells.length % 7 !== 0) cells.push({ dateStr: null })
+                          return (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
+                              {cells.map((cell, idx) => {
+                                if (!cell.dateStr) return <div key={idx} />
+                                const s = map[cell.dateStr]
+                                const isFuture = cell.dateStr > today
+                                const isToday = cell.dateStr === today
+                                const dayNum = parseInt(cell.dateStr.split('-')[2])
+                                return (
+                                  <div key={idx} title={`${cell.dateStr} — ${s === 'present' ? 'Ирсэн' : s === 'absent' ? 'Ирээгүй' : 'Тэмдэглээгүй'}`}
+                                    style={{
+                                      aspectRatio: '1', borderRadius: 6, minHeight: 36,
+                                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1,
+                                      background: isFuture ? 'rgba(0,0,0,0.1)' : s === 'present' ? 'rgba(16,185,129,0.18)' : s === 'absent' ? 'rgba(239,68,68,0.14)' : 'rgba(255,255,255,0.03)',
+                                      border: isToday ? '1.5px solid rgba(59,130,246,0.5)' : s === 'present' ? '1px solid rgba(16,185,129,0.35)' : s === 'absent' ? '1px solid rgba(239,68,68,0.25)' : '1px solid rgba(255,255,255,0.04)',
+                                    }}>
+                                    <span style={{ fontSize: '0.68rem', fontWeight: 600, color: isFuture ? '#374151' : s === 'present' ? '#6ee7b7' : s === 'absent' ? '#fca5a5' : '#4b5563' }}>{dayNum}</span>
+                                    {!isFuture && (
+                                      s === 'present' ? <CheckCircle2 size={11} style={{ color: '#10b981' }} /> :
+                                      s === 'absent' ? <XCircle size={11} style={{ color: '#ef4444' }} /> :
+                                      <span style={{ width: 6, height: 6, borderRadius: '50%', border: '1px dashed #374151' }} />
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )
+                        })()}
+                      </div>
 
-                  {/* Attended dates list */}
-                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ fontSize: '0.78rem', color: '#9ca3af', marginBottom: 8, fontWeight: 700 }}>Ирсэн өдрүүд:</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                      {pastDates.filter(d => map[d] === 'present').length === 0 ? (
-                        <span style={{ color: '#4b5563', fontSize: '0.78rem' }}>Бүртгэл байхгүй</span>
-                      ) : pastDates.filter(d => map[d] === 'present').map(d => (
-                        <span key={d} style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)', color: '#10b981', padding: '3px 10px', borderRadius: 20, fontSize: '0.75rem', fontWeight: 600 }}>
-                          {parseInt(d.split('-')[2])}/{parseInt(d.split('-')[1])} {dayOfWeekLabel(d)}
-                        </span>
-                      ))}
-                    </div>
-                    {pastDates.filter(d => map[d] === 'absent').length > 0 && (
-                      <>
-                        <div style={{ fontSize: '0.78rem', color: '#9ca3af', marginBottom: 8, marginTop: 10, fontWeight: 700 }}>Ирээгүй өдрүүд:</div>
+                      {/* Attended dates list */}
+                      <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div style={{ fontSize: '0.78rem', color: '#9ca3af', marginBottom: 8, fontWeight: 700 }}>Ирсэн өдрүүд:</div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          {pastDates.filter(d => map[d] === 'absent').map(d => (
-                            <span key={d} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444', padding: '3px 10px', borderRadius: 20, fontSize: '0.75rem', fontWeight: 600 }}>
+                          {pastDates.filter(d => map[d] === 'present').length === 0 ? (
+                            <span style={{ color: '#4b5563', fontSize: '0.78rem' }}>Бүртгэл байхгүй</span>
+                          ) : pastDates.filter(d => map[d] === 'present').map(d => (
+                            <span key={d} style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)', color: '#10b981', padding: '3px 10px', borderRadius: 20, fontSize: '0.75rem', fontWeight: 600 }}>
                               {parseInt(d.split('-')[2])}/{parseInt(d.split('-')[1])} {dayOfWeekLabel(d)}
                             </span>
                           ))}
                         </div>
-                      </>
-                    )}
-                  </div>
+                        {pastDates.filter(d => map[d] === 'absent').length > 0 && (
+                          <>
+                            <div style={{ fontSize: '0.78rem', color: '#9ca3af', marginBottom: 8, marginTop: 10, fontWeight: 700 }}>Ирээгүй өдрүүд:</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                              {pastDates.filter(d => map[d] === 'absent').map(d => (
+                                <span key={d} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444', padding: '3px 10px', borderRadius: 20, fontSize: '0.75rem', fontWeight: 600 }}>
+                                  {parseInt(d.split('-')[2])}/{parseInt(d.split('-')[1])} {dayOfWeekLabel(d)}
+                                </span>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               )
             })}
