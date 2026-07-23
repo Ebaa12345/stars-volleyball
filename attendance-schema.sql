@@ -1,3 +1,10 @@
+-- ⚠️ ХУУЧИРСАН (deprecated): attendance table болон түүний policy-г одоо
+-- supabase-schema.sql (4-р хэсэг, "Attendance") дотор бүрэн тодорхойлдог.
+-- Энэ файлыг ДАХИН АЖИЛЛУУЛАХ ШААРДЛАГАГҮЙ — зөвхөн түүхийн хувьд үлдээв.
+-- (Өмнө нь энэ файлын create policy-нүүд drop-if-exists-гүй байсан тул
+-- supabase-schema.sql-ийг эхлээд ажиллуулсны дараа үүнийг дахин ажиллуулбал
+-- "policy already exists" алдаатай зогсдог байсныг idempotent болгож заслаа.)
+--
 -- Ирцийн систем: attendance table
 
 create table if not exists public.attendance (
@@ -14,11 +21,13 @@ create table if not exists public.attendance (
 alter table public.attendance enable row level security;
 
 -- Хэрэглэгч өөрийн ирцийг харна
+drop policy if exists "Users can view own attendance" on attendance;
 create policy "Users can view own attendance"
   on attendance for select
   using (auth.uid() = user_id);
 
 -- Admin бүгдийг харна
+drop policy if exists "Admins can view all attendance" on attendance;
 create policy "Admins can view all attendance"
   on attendance for select
   using (
@@ -26,18 +35,21 @@ create policy "Admins can view all attendance"
   );
 
 -- Admin тэмдэглэж/засаж чадна
+drop policy if exists "Admins can insert attendance" on attendance;
 create policy "Admins can insert attendance"
   on attendance for insert
   with check (
     exists (select 1 from profiles where id = auth.uid() and role = 'admin')
   );
 
+drop policy if exists "Admins can update attendance" on attendance;
 create policy "Admins can update attendance"
   on attendance for update
   using (
     exists (select 1 from profiles where id = auth.uid() and role = 'admin')
   );
 
+drop policy if exists "Admins can delete attendance" on attendance;
 create policy "Admins can delete attendance"
   on attendance for delete
   using (

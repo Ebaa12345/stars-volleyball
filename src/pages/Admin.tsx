@@ -634,7 +634,11 @@ export default function Admin() {
   // мөрүүдийг гараар цэвэрлэх. Эхлээд хэдэн мөр байгааг тоолж баталгаажуулж
   // асуугаад, зөвшөөрсний дараа устгана.
   async function cleanupOldData(monthsBack: number) {
+    // Эхлээд өдрийг 1 болгож тавиад сар хасна — эс тэгвээс жишээ нь 3-р сарын
+    // 31-нээс 1 сар хасахад Date автоматаар 4-р сар руу "overflow" хийж,
+    // буруу (нэг сар өмнөх бус, ойролцоогоор 2 сарын өмнөх) огноо гарч байсан.
     const cutoffDate = new Date()
+    cutoffDate.setDate(1)
     cutoffDate.setMonth(cutoffDate.getMonth() - monthsBack)
     const cutoff = ymd(cutoffDate)
     setCleanupLoading(true)
@@ -1801,11 +1805,11 @@ export default function Admin() {
                 <div style={{ display: 'flex', gap: 20, marginTop: 18, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.05)', fontSize: '0.8rem', color: '#6b7280' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981' }} />
-                    <span>Ногоон тоо = Ирсэн тоглогч</span>
+                    <span>Ирсэн тоглогч</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444' }} />
-                    <span>Улаан тоо = Ирээгүй тоглогч</span>
+                    <span>Ирээгүй тоглогч</span>
                   </div>
                 </div>
               </div>

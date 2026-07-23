@@ -81,18 +81,52 @@ body {
   font-weight: 600; transition: background .2s;
 }
 .nav-btn-primary:hover { background: var(--orange-dim); }
-.hamburger { display: none; background: none; border: none; color: var(--white); cursor: pointer; margin-left: auto; }
+.hamburger {
+  display: none;
+  position: relative;
+  width: 32px; height: 32px;
+  align-items: center; justify-content: center;
+  background: none; border: none; color: var(--white);
+  cursor: pointer; margin-left: auto;
+}
+.hamburger-icon { position: relative; width: 24px; height: 24px; }
+.hamburger-icon svg {
+  position: absolute; top: 0; left: 0;
+  transition: opacity .25s ease, transform .3s cubic-bezier(.4, 0, .2, 1);
+}
+.hamburger-icon .icon-menu { opacity: 1; transform: rotate(0deg); }
+.hamburger-icon .icon-close { opacity: 0; transform: rotate(-90deg); }
+.hamburger.open .icon-menu { opacity: 0; transform: rotate(90deg); }
+.hamburger.open .icon-close { opacity: 1; transform: rotate(0deg); }
+
+/* Гадна grid wrapper — "0fr → 1fr" trick-ээр өндрийг гөлгөр нээж/хаана
+   (React {open && ...} шиг шууд mount/unmount хийхээс ялгаатай нь энд
+   хаагдах animation-ыг ч тоглуулж чадна). */
+.mobile-menu-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows .35s cubic-bezier(.4, 0, .2, 1);
+}
+.mobile-menu-wrap.open { grid-template-rows: 1fr; }
+
 .mobile-menu {
-  display: flex; flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
   background: var(--navy-mid); border-top: 1px solid var(--border);
+}
+.mobile-menu-inner {
+  display: flex; flex-direction: column;
   padding: 12px;
 }
 .mobile-link {
   color: var(--white); text-decoration: none; background: none; border: none;
   padding: 12px 16px; border-radius: var(--radius-sm);
   font-size: 15px; cursor: pointer; text-align: left;
-  transition: background .2s;
+  opacity: 0;
+  transform: translateX(-10px);
+  transition: background .2s, opacity .3s ease, transform .3s ease;
 }
+.mobile-menu-wrap.open .mobile-link { opacity: 1; transform: translateX(0); }
 .mobile-link:hover { background: rgba(255,255,255,.06); }
 .mobile-link.highlight { color: var(--orange); font-weight: 600; }
 .mobile-link.logout { color: #ef4444; }
@@ -796,6 +830,330 @@ body {
 .legend-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
 .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
 
+/* ─── Schedule (Хэрэглэгчийн хянах самбар) — сайтын нэгдсэн
+     orange-glow + glassmorphism дизайнд оруулсан ────────────── */
+.schedule-page { position: relative; overflow: hidden; }
+.schedule-glow {
+  position: absolute;
+  top: -160px; left: 50%;
+  transform: translateX(-50%);
+  width: min(900px, 140vw);
+  height: 480px;
+  background: radial-gradient(ellipse 60% 60% at 50% 30%, rgba(249, 115, 22, 0.1), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.schedule-month-nav {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 12px;
+}
+.schedule-month-nav button {
+  background: none; border: none; color: var(--white);
+  cursor: pointer; display: flex; align-items: center;
+  padding: 5px; border-radius: 6px;
+  transition: color .2s ease, background .2s ease;
+}
+.schedule-month-nav button:hover { color: var(--orange); background: rgba(249, 115, 22, .12); }
+.schedule-month-nav span {
+  font-weight: 700; color: var(--white); font-size: 14px;
+  min-width: 108px; text-align: center;
+}
+
+/* Хамрагдаж буй хөтөлбөрүүд */
+.schedule-programs-row {
+  position: relative; z-index: 1;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: rgba(59, 130, 246, .06); border: 1px solid rgba(59, 130, 246, .18);
+  border-radius: 12px; padding: 10px 16px; margin-bottom: 20px;
+}
+.schedule-programs-label {
+  display: flex; align-items: center; gap: 6px;
+  color: #93c5fd; font-size: 13px; font-weight: 700; white-space: nowrap;
+}
+.schedule-programs-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.schedule-program-chip {
+  background: rgba(59, 130, 246, .15); color: #60a5fa;
+  padding: 3px 10px; border-radius: 8px; font-size: 12px; font-weight: 700;
+}
+
+/* Явцын прогресс карт — Home.tsx-ийн stat-card-тай ижил --accent/--accent-rgb хэв маяг */
+.schedule-progress-card {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  isolation: isolate;
+  background: linear-gradient(135deg, rgba(20, 27, 47, .8) 0%, rgba(10, 15, 30, .9) 100%);
+  border: 1px solid rgba(var(--accent-rgb), .2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, .4), inset 0 0 20px rgba(var(--accent-rgb), .06);
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 32px;
+  transition: border-color .3s ease, box-shadow .3s ease;
+}
+.schedule-progress-glow {
+  position: absolute;
+  top: -50px; right: -50px;
+  width: 150px; height: 150px;
+  background: rgb(var(--accent-rgb));
+  filter: blur(70px);
+  opacity: .15;
+  pointer-events: none;
+  z-index: -1;
+}
+.schedule-progress-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin-bottom: 16px; flex-wrap: wrap; gap: 12px;
+}
+.schedule-progress-title { display: flex; align-items: center; gap: 12px; }
+.schedule-progress-icon {
+  background: rgba(var(--accent-rgb), .15);
+  color: rgb(var(--accent-rgb));
+  padding: 10px; border-radius: 12px;
+  border: 1px solid rgba(var(--accent-rgb), .3);
+  display: flex;
+  transition: transform .25s ease;
+}
+.schedule-progress-card:hover .schedule-progress-icon { transform: scale(1.06) rotate(-4deg); }
+.schedule-progress-title h3 { margin: 0; font-size: 17.6px; font-weight: 700; color: var(--white); }
+.schedule-progress-title p { margin: 4px 0 0; font-size: 13.6px; color: var(--muted); }
+.schedule-progress-percent { text-align: right; }
+.schedule-progress-percent span {
+  font-family: var(--font-display);
+  font-size: 34px; letter-spacing: .5px;
+  color: rgb(var(--accent-rgb));
+  line-height: 1;
+}
+.schedule-progress-percent div { font-size: 12.8px; color: var(--muted); font-weight: 500; margin-top: 2px; }
+
+.schedule-progress-bar {
+  width: 100%; height: 10px;
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid rgba(255, 255, 255, .03);
+  border-radius: 6px; overflow: hidden; margin-bottom: 14px;
+}
+.schedule-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), .8), rgb(var(--accent-rgb)));
+  box-shadow: 0 0 12px rgb(var(--accent-rgb));
+  transition: width .6s cubic-bezier(.4, 0, .2, 1);
+}
+
+.schedule-progress-stats {
+  display: flex; gap: 24px; flex-wrap: wrap;
+  font-size: 14px; color: #e5e7eb;
+  background: rgba(0, 0, 0, .2);
+  padding: 10px 16px; border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .04);
+}
+.schedule-progress-stats strong { color: var(--white); font-size: 15px; }
+.schedule-progress-stats div:first-child strong { color: rgb(var(--accent-rgb)); }
+.schedule-progress-divider { width: 1px; background: rgba(255, 255, 255, .15); }
+
+/* Ирцийн сарын мини-календарь — хумиад/дэлгэдэг (accordion), эхэндээ хумигдсан */
+.schedule-att-card {
+  position: relative; z-index: 1;
+  background: rgba(20, 27, 47, .45);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: 28px;
+  transition: border-color .3s ease;
+}
+.schedule-att-card.open { border-color: rgba(249, 115, 22, .25); }
+.schedule-att-head {
+  width: 100%;
+  display: flex; justify-content: space-between; align-items: center;
+  background: none; border: none; cursor: pointer;
+  padding: 16px 20px;
+  transition: background .2s ease;
+}
+.schedule-att-head:hover { background: rgba(255, 255, 255, .03); }
+.schedule-att-head h3 {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0; font-size: 14.7px; font-weight: 700; color: var(--white);
+}
+.schedule-att-head h3 svg { color: var(--orange); }
+.schedule-att-head-right {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 700; color: var(--white); font-size: 14px;
+}
+.schedule-att-chevron {
+  color: var(--muted);
+  transition: transform .3s cubic-bezier(.4, 0, .2, 1), color .2s ease;
+}
+.schedule-att-card.open .schedule-att-chevron { transform: rotate(180deg); color: var(--orange); }
+
+.schedule-att-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows .35s cubic-bezier(.4, 0, .2, 1);
+}
+.schedule-att-card.open .schedule-att-body { grid-template-rows: 1fr; }
+.schedule-att-body-inner { overflow: hidden; min-height: 0; padding: 0 20px 18px; }
+
+.schedule-att-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.schedule-att-dow { margin-bottom: 4px; }
+.schedule-att-dow div {
+  text-align: center; font-size: 10.9px; font-weight: 700;
+  color: var(--muted); padding: 4px 0;
+}
+.schedule-att-cell {
+  aspect-ratio: 1; min-height: 44px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .15);
+  border: 1px solid rgba(255, 255, 255, .03);
+  transition: transform .15s ease, border-color .15s ease;
+}
+.schedule-att-cell span { font-size: 12px; font-weight: 600; color: #e5e7eb; }
+.schedule-att-cell:not(.out-of-month):hover { transform: translateY(-2px); border-color: rgba(249, 115, 22, .3); }
+.schedule-att-cell.out-of-month { opacity: .2; }
+.schedule-att-cell.today { background: rgba(59, 130, 246, .08); border-color: rgba(59, 130, 246, .3); }
+.schedule-att-cell.today span { color: #60a5fa; font-weight: 800; }
+.schedule-att-cell.present { background: rgba(16, 185, 129, .12); border-color: rgba(16, 185, 129, .3); }
+.schedule-att-cell.present svg { color: #10b981; }
+.schedule-att-cell.absent { background: rgba(239, 68, 68, .08); border-color: rgba(239, 68, 68, .2); }
+.schedule-att-cell.absent svg { color: #ef4444; }
+.schedule-att-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  border: 1.5px dashed rgba(255, 255, 255, .15);
+}
+
+.schedule-att-legend {
+  display: flex; gap: 20px; margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, .05);
+  font-size: 13px;
+}
+.schedule-att-legend .present { color: #10b981; font-weight: 700; }
+.schedule-att-legend .absent { color: #ef4444; font-weight: 700; }
+
+/* Хоосон төлөв */
+.schedule-empty {
+  position: relative; z-index: 1;
+  text-align: center; padding: 60px 20px;
+  background: rgba(20, 27, 47, .2);
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+}
+.schedule-empty svg { color: var(--muted); margin-bottom: 12px; }
+.schedule-empty h3 { color: var(--white); margin: 0 0 4px; font-size: 16px; }
+.schedule-empty p { color: var(--muted); font-size: 13.6px; margin: 0; }
+
+/* Хуваарийн жагсаалт — өдөр бүрээр хумиад/дэлгэдэг (accordion),
+   scroll-reveal animation-тай */
+.schedule-day-list { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 16px; }
+.schedule-day-group {
+  background: rgba(20, 27, 47, .45);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(18px);
+  animation: schedule-day-in .5s cubic-bezier(.16, 1, .3, 1) forwards;
+  transition: border-color .3s ease, box-shadow .3s ease;
+}
+.schedule-day-group.open {
+  border-color: rgba(249, 115, 22, .28);
+  box-shadow: 0 14px 30px -18px rgba(0, 0, 0, .5);
+}
+@keyframes schedule-day-in {
+  to { opacity: 1; transform: translateY(0); }
+}
+.schedule-day-title {
+  width: 100%;
+  display: flex; align-items: center; gap: 10px;
+  background: none; border: none; cursor: pointer;
+  padding: 16px 18px;
+  font-size: 15.2px; font-weight: 800; color: var(--white);
+  text-align: left;
+  transition: background .2s ease;
+}
+.schedule-day-title:hover { background: rgba(255, 255, 255, .03); }
+.schedule-day-bar {
+  width: 4px; height: 14px; flex-shrink: 0;
+  background: var(--orange); border-radius: 4px;
+}
+.schedule-day-label { flex: 1; }
+.schedule-day-count {
+  background: rgba(255, 255, 255, .06);
+  color: var(--muted);
+  font-size: 11.6px; font-weight: 700;
+  padding: 2px 9px; border-radius: 999px;
+}
+.schedule-day-chevron {
+  color: var(--muted); flex-shrink: 0;
+  transition: transform .3s cubic-bezier(.4, 0, .2, 1), color .2s ease;
+}
+.schedule-day-group.open .schedule-day-chevron { transform: rotate(180deg); color: var(--orange); }
+
+.schedule-day-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows .35s cubic-bezier(.4, 0, .2, 1);
+}
+.schedule-day-group.open .schedule-day-body { grid-template-rows: 1fr; }
+.schedule-day-body-inner { overflow: hidden; min-height: 0; }
+.schedule-day-body-inner .schedule-session-grid { padding: 0 18px 18px; }
+
+.schedule-session-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px;
+}
+.schedule-session-card {
+  border-left: 4px solid rgb(var(--accent-rgb));
+  background: rgba(var(--accent-rgb), .05);
+  border-top: 1px solid rgba(255, 255, 255, .02);
+  border-right: 1px solid rgba(255, 255, 255, .02);
+  border-bottom: 1px solid rgba(255, 255, 255, .02);
+  border-radius: 4px 10px 10px 4px;
+  padding: 14px;
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.schedule-session-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px -12px rgba(0, 0, 0, .5);
+}
+.schedule-session-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 10px; flex-wrap: wrap; gap: 6px;
+}
+.schedule-session-type {
+  color: rgb(var(--accent-rgb)); font-weight: 700; font-size: 13.1px;
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.schedule-session-program {
+  color: #c084fc; background: rgba(168, 85, 247, .12);
+  padding: 2px 8px; border-radius: 7px; font-size: 11.5px; font-weight: 700;
+}
+.schedule-session-time, .schedule-session-location {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--white); font-size: 14px; margin-bottom: 6px; font-weight: 500;
+}
+.schedule-session-location { color: var(--muted); font-size: 13.1px; }
+.schedule-session-time svg, .schedule-session-location svg { color: var(--muted); flex-shrink: 0; }
+.schedule-session-notes {
+  margin: 0; padding: 6px 8px;
+  background: rgba(0, 0, 0, .15); border-radius: 6px;
+  border-left: 2px solid rgba(255, 255, 255, .1);
+  font-size: 12.8px; color: #d1d5db;
+}
+
+@media (max-width: 640px) {
+  .schedule-progress-percent { text-align: left; }
+  .schedule-progress-head { flex-direction: column; }
+  .schedule-att-cell { min-height: 36px; }
+  .schedule-session-grid { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .schedule-day-group { opacity: 1; transform: none; animation: none; }
+  .schedule-day-body, .schedule-day-chevron,
+  .schedule-att-body, .schedule-att-chevron { transition: none; }
+}
+
 /* ─── Admin ──────────────────────────────────────────────── */
 .admin-page { }
 .admin-header {
@@ -1352,14 +1710,18 @@ body {
 }
 
 /* ─── Page Transitions ───────────────────────────────────── */
+/* key={pathname} тул div бүр шилжилт бүрд шинээр mount хийгдэж, энэ
+   animation автоматаар эхнээс тоглоно (JS-ээр opacity toggle хийх
+   шаардлагагүй). */
 .page-transition {
-  opacity: 0;
-  transform: translateY(12px);
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  animation: page-transition-enter .5s cubic-bezier(.16, 1, .3, 1) both;
 }
-.page-transition.visible {
-  opacity: 1;
-  transform: translateY(0);
+@keyframes page-transition-enter {
+  from { opacity: 0; transform: translateY(16px) scale(.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-transition { animation: none; }
 }
 
 /* ─── Attendance ──────────────────────────────────────────── */

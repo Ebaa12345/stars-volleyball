@@ -9,8 +9,13 @@ export default function Team() {
   // дасгалжуулагч болгож нэмэх/хасах боломжтой — Admin панель рүү орох
   // шаардлагагүй.
   const { isAdmin } = useAuth()
-  const [team, setTeam] = useState<Profile[]>([])
+  const [coaches, setCoaches] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
+
+  // Admin-ий "дасгалжуулагч болгох" dropdown-д зориулсан, дасгалжуулагч БОЛОН
+  // admin-аас бусад бүртгэлтэй хэрэглэгчдийн жагсаалт — зөвхөн admin үзнэ
+  // (доор isAdmin true үед л татна).
+  const [candidates, setCandidates] = useState<Profile[]>([])
 
   // Дасгалжуулагч нэмэх inline panel
   const [showAddCoach, setShowAddCoach] = useState(false)
@@ -20,18 +25,25 @@ export default function Team() {
   const [removingCoachId, setRemovingCoachId] = useState<string | null>(null)
 
   useEffect(() => {
-    async function loadTeam() {
+    async function loadCoaches() {
       setLoading(true)
-      const { data } = await supabase.from('profiles').select('*').order('full_name', { ascending: true })
-      setTeam((data as Profile[]) || [])
+      // Нийтэд (нэвтрээгүй зочид ч) харагддаг тул profiles-ыг шууд уншихгүй
+      // (email leak-ээс сэргийлж RLS-ээр хаагдсан) — зөвхөн аюулгүй
+      // талбаруудыг буцаадаг RPC ашиглана.
+      const { data } = await supabase.rpc('get_public_team_members')
+      setCoaches((data as Profile[]) || [])
       setLoading(false)
     }
-    loadTeam()
+    loadCoaches()
   }, [])
 
-  // Ангилал салгах логик
-  const coaches = team.filter(m => m.role === 'coach')
-  const players = team.filter(m => m.role !== 'coach')
+  // Admin-only: дасгалжуулагч болгох боломжтой хэрэглэгчид (зөвхөн 'user' —
+  // 'admin' эрхтэй хүнийг санамсаргүй coach болгож бууруулахаас сэргийлнэ).
+  useEffect(() => {
+    if (!isAdmin) { setCandidates([]); return }
+    supabase.from('profiles').select('*').eq('role', 'user').order('full_name', { ascending: true })
+      .then(({ data }) => setCandidates((data as Profile[]) || []))
+  }, [isAdmin])
 
   // ── Admin: бүртгэлтэй хэрэглэгчийг дасгалжуулагч болгож нэмэх ──
   async function addCoach() {
@@ -41,7 +53,9 @@ export default function Team() {
       .update({ role: 'coach', position: addCoachPosition || null })
       .eq('id', addCoachUserId)
     if (!error) {
-      setTeam(prev => prev.map(m => m.id === addCoachUserId ? { ...m, role: 'coach', position: addCoachPosition || m.position } : m))
+      const promoted = candidates.find(c => c.id === addCoachUserId)
+      if (promoted) setCoaches(prev => [...prev, { ...promoted, role: 'coach', position: addCoachPosition || promoted.position }])
+      setCandidates(prev => prev.filter(c => c.id !== addCoachUserId))
       setShowAddCoach(false)
       setAddCoachUserId('')
       setAddCoachPosition('')
@@ -57,7 +71,9 @@ export default function Team() {
     setRemovingCoachId(id)
     const { error } = await supabase.from('profiles').update({ role: 'user' }).eq('id', id)
     if (!error) {
-      setTeam(prev => prev.map(m => m.id === id ? { ...m, role: 'user' } : m))
+      const demoted = coaches.find(c => c.id === id)
+      setCoaches(prev => prev.filter(c => c.id !== id))
+      if (demoted) setCandidates(prev => [...prev, { ...demoted, role: 'user' }])
     } else {
       alert('Алдаа: ' + error.message)
     }
@@ -111,7 +127,7 @@ export default function Team() {
                       style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', padding: '10px 12px', borderRadius: 10, fontSize: '0.85rem', outline: 'none' }}
                     >
                       <option value="">— Бүртгэлтэй хэрэглэгч сонгох —</option>
-                      {players.map(p => (
+                      {candidates.map(p => (
                         <option key={p.id} value={p.id}>{p.full_name} ({p.email})</option>
                       ))}
                     </select>
@@ -129,7 +145,7 @@ export default function Team() {
                     >
                       {savingCoach ? '...' : 'Нэмэх'}
                     </button>
-                    {players.length === 0 && (
+                    {candidates.length === 0 && (
                       <p style={{ gridColumn: '1 / -1', margin: 0, color: '#6b7280', fontSize: '0.8rem' }}>
                         Дасгалжуулагч болгох боломжтой бүртгэлтэй хэрэглэгч алга байна.
                       </p>

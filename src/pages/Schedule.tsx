@@ -1,17 +1,25 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase, SessionAssignment, SessionType } from '../lib/supabase'
-import { Calendar, Clock, MapPin, ChevronLeft, ChevronRight, Gauge, CheckCircle2, XCircle, History, ListChecks } from 'lucide-react'
+import { Calendar, Clock, MapPin, ChevronLeft, ChevronRight, ChevronDown, Gauge, CheckCircle2, XCircle, History, ListChecks } from 'lucide-react'
 
 const DAY_NAMES_SHORT = ['Да', 'Мя', 'Лх', 'Пү', 'Ба', 'Бя', 'Ня']
 const DAY_NAMES_FULL = ['Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба', 'Ням']
 const MONTH_NAMES = ['1-р сар', '2-р сар', '3-р сар', '4-р сар', '5-р сар', '6-р сар', '7-р сар', '8-р сар', '9-р сар', '10-р сар', '11-р сар', '12-р сар']
 
-const TYPE_CONFIG: Record<SessionType, { label: string; color: string; bg: string }> = {
-  practice: { label: 'Дасгал', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.05)' },
-  match: { label: 'Тоглолт', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.05)' },
-  training: { label: 'Биеийн тамир', color: '#10b981', bg: 'rgba(16, 185, 129, 0.05)' },
-  rest: { label: 'Амралт', color: '#6b7280', bg: 'rgba(107, 114, 128, 0.05)' },
+const TYPE_CONFIG: Record<SessionType, { label: string; color: string }> = {
+  practice: { label: 'Дасгал', color: '#3b82f6' },
+  match: { label: 'Тоглолт', color: '#ef4444' },
+  training: { label: 'Биеийн тамир', color: '#10b981' },
+  rest: { label: 'Амралт', color: '#6b7280' },
+}
+
+// Hex өнгийг "r, g, b" мөр болгож хөрвүүлнэ — CSS дотор rgba(var(--accent-rgb), alpha)
+// хэлбэрээр ашиглана (Home.tsx-ийн stat-card-тай нэг загвар).
+function hexToRgbTriplet(hex: string) {
+  const clean = hex.replace('#', '')
+  const bigint = parseInt(clean, 16)
+  return `${(bigint >> 16) & 255}, ${(bigint >> 8) & 255}, ${bigint & 255}`
 }
 
 function ymd(d: Date) {
@@ -60,6 +68,11 @@ export default function Schedule() {
   // program_id -> нэр. Тухайн бэлтгэл ямар хөтөлбөрт хамаарахыг (жишээ нь
   // "1-р хөтөлбөр") тоглогчид өөрсдөд нь харуулахын тулд.
   const [programNames, setProgramNames] = useState<Record<string, string>>({})
+  // Хуваарийг өдөр бүрээр хумиад/дэлгэдэг (accordion) болгосон — аль өдрүүд
+  // одоо дэлгэрэнгүй харагдаж байгааг заана.
+  const [openDates, setOpenDates] = useState<Set<string>>(new Set())
+  // Ирцийн сарын мини-календарь ч мөн хумигдаж/дэлгэгддэг — эхэндээ хумигдсан.
+  const [attCalendarOpen, setAttCalendarOpen] = useState(false)
 
   useEffect(() => {
     async function loadPrograms() {
@@ -142,182 +155,210 @@ export default function Schedule() {
   assignments.forEach(a => { (assignmentsByDate[a.date] ||= []).push(a) })
   const sortedDates = Object.keys(assignmentsByDate).sort()
 
+  // Сар солиход өмнөх сарын нээлттэй/хаалттай төлөв шинэ сард хамаарахгүй
+  // тул цэвэрлээд, доорх effect-д дахин "анхны төлөв" тооцуулна.
+  useEffect(() => { setOpenDates(new Set()) }, [viewMonth])
+
+  // Хуваарь ачаалагдмагц өдрүүд ирэхэд: өнөөдрийг (эсвэл хамгийн ойрын
+  // ирээдүйн огноог) анхнаасаа дэлгэрэнгүй нээлттэй харуулна, бусад нь
+  // хумигдсан хэвээр — хэрэглэгч аль хэдийн өөрөө нээж/хаасан бол хөндөхгүй.
+  useEffect(() => {
+    if (sortedDates.length === 0) return
+    setOpenDates(prev => {
+      if (prev.size > 0) return prev
+      const defaultOpen = sortedDates.includes(todayDateStr)
+        ? todayDateStr
+        : (sortedDates.find(d => d >= todayDateStr) || sortedDates[0])
+      return new Set([defaultOpen])
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortedDates.join(',')])
+
+  function toggleDate(date: string) {
+    setOpenDates(prev => {
+      const next = new Set(prev)
+      if (next.has(date)) next.delete(date)
+      else next.add(date)
+      return next
+    })
+  }
+
   // Энэ сард ХАМРАГДАЖ буй хөтөлбөрүүд (нэг товч мэдээлэл болгож дээр нь харуулах)
   const myProgramIds = Array.from(new Set(assignments.map(a => a.program_id).filter(Boolean))) as string[]
   const myProgramNames = myProgramIds.map(id => programNames[id]).filter(Boolean)
 
   return (
-    <div className="page">
-      <div className="container" style={{ maxWidth: '1000px' }}>
+    <div className="page schedule-page">
+      <div className="schedule-glow" aria-hidden="true" />
+      <div className="container" style={{ maxWidth: '1000px', position: 'relative', zIndex: 1 }}>
 
         {/* ТОЛГОЙ ХЭСЭГ */}
-        <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+        <div className="schedule-header">
           <div>
             <span className="eyebrow">Миний хянах самбар</span>
             <h1>Хувийн бэлтгэлийн хуваарь</h1>
           </div>
 
-          {/* Сар солих навигаци */}
-          <div className="week-nav" style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', padding: '6px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
-            <button onClick={() => setViewMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><ChevronLeft size={18} /></button>
-            <span style={{ fontWeight: 700, color: '#fff', fontSize: '0.9rem', minWidth: '110px', textAlign: 'center' }}>{monthLabel}</span>
-            <button onClick={() => setViewMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><ChevronRight size={18} /></button>
+          <div className="schedule-month-nav">
+            <button onClick={() => setViewMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))} aria-label="Өмнөх сар"><ChevronLeft size={18} /></button>
+            <span>{monthLabel}</span>
+            <button onClick={() => setViewMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))} aria-label="Дараагийн сар"><ChevronRight size={18} /></button>
           </div>
         </div>
 
         {/* ХАМРАГДАЖ БУЙ ХӨТӨЛБӨРҮҮД — энэ сард ямар хөтөлбөрт (нэрээр) хамрагдаж байгааг харуулна */}
         {myProgramNames.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.18)', borderRadius: 12, padding: '10px 16px', marginBottom: 20 }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#93c5fd', fontSize: '0.82rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
-              <ListChecks size={15} /> Миний хөтөлбөр:
-            </span>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <div className="schedule-programs-row">
+            <span className="schedule-programs-label"><ListChecks size={15} /> Миний хөтөлбөр:</span>
+            <div className="schedule-programs-chips">
               {myProgramNames.map(name => (
-                <span key={name} style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa', padding: '3px 10px', borderRadius: 8, fontSize: '0.8rem', fontWeight: 700 }}>{name}</span>
+                <span key={name} className="schedule-program-chip">{name}</span>
               ))}
             </div>
           </div>
         )}
 
         {/* ЯВЦЫН ПРОГРЕСС КАРТ */}
-        <div style={{
-          background: 'linear-gradient(135deg, rgba(20, 27, 47, 0.8) 0%, rgba(10, 15, 30, 0.9) 100%)',
-          border: `1px solid ${statusColor}33`,
-          boxShadow: `0 8px 32px rgba(0,0,0,0.4), inset 0 0 20px ${statusColor}10`,
-          borderRadius: '16px',
-          padding: '24px',
-          marginBottom: '32px',
-          position: 'relative',
-          overflow: 'hidden'
-        }}>
-          <div style={{ position: 'absolute', top: '-50px', right: '-50px', width: '150px', height: '150px', background: statusColor, filter: 'blur(70px)', opacity: 0.15, pointerEvents: 'none' }}></div>
+        <div
+          className="schedule-progress-card"
+          style={{ ['--accent' as any]: statusColor, ['--accent-rgb' as any]: hexToRgbTriplet(statusColor) }}
+        >
+          <div className="schedule-progress-glow" aria-hidden="true" />
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ background: `${statusColor}15`, color: statusColor, padding: '10px', borderRadius: '12px', border: `1px solid ${statusColor}33` }}>
-                <Gauge size={22} />
-              </div>
+          <div className="schedule-progress-head">
+            <div className="schedule-progress-title">
+              <div className="schedule-progress-icon"><Gauge size={22} /></div>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#fff' }}>Сарын лимитийн биелэлт</h3>
-                <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#9ca3af' }}>{motivationalText}</p>
+                <h3>Сарын лимитийн биелэлт</h3>
+                <p>{motivationalText}</p>
               </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <span style={{ fontSize: '1.8rem', fontWeight: 800, color: statusColor, letterSpacing: '-0.5px' }}>{percentage}%</span>
-              <div style={{ fontSize: '0.8rem', color: '#9ca3af', fontWeight: 500 }}>Явцын хувь</div>
+            <div className="schedule-progress-percent">
+              <span>{percentage}%</span>
+              <div>Явцын хувь</div>
             </div>
           </div>
 
-          <div style={{ width: '100%', height: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', overflow: 'hidden', marginBottom: '14px', border: '1px solid rgba(255,255,255,0.03)' }}>
-            <div style={{ width: `${percentage}%`, height: '100%', background: `linear-gradient(90deg, ${statusColor}cc, ${statusColor})`, boxShadow: `0 0 12px ${statusColor}`, transition: 'width 0.5s cubic-bezier(0.4, 0, 0.2, 1)' }}></div>
+          <div className="schedule-progress-bar">
+            <div className="schedule-progress-bar-fill" style={{ width: `${percentage}%` }} />
           </div>
 
-          <div style={{ display: 'flex', gap: '24px', fontSize: '0.88rem', color: '#e5e7eb', background: 'rgba(0,0,0,0.2)', padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.04)', flexWrap: 'wrap' }}>
-            <div>Ирсэн: <strong style={{ color: statusColor, fontSize: '0.95rem' }}>{presentCount} удаа</strong></div>
-            <div style={{ color: 'rgba(255,255,255,0.15)' }}>|</div>
-            <div>Сарын лимит: <strong style={{ color: '#fff' }}>{userLimit} удаа</strong></div>
-            <div style={{ color: 'rgba(255,255,255,0.15)' }}>|</div>
-            <div>Дутуу: <strong style={{ color: '#9ca3af' }}>{Math.max(0, userLimit - presentCount)} удаа</strong></div>
+          <div className="schedule-progress-stats">
+            <div>Ирсэн: <strong>{presentCount} удаа</strong></div>
+            <div className="schedule-progress-divider" />
+            <div>Сарын лимит: <strong>{userLimit} удаа</strong></div>
+            <div className="schedule-progress-divider" />
+            <div>Дутуу: <strong>{Math.max(0, userLimit - presentCount)} удаа</strong></div>
           </div>
         </div>
 
-        {/* ИРЦИЙН САРЫН CALENDAR */}
-        <div style={{ background: 'rgba(20,27,47,0.45)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: '18px 20px', marginBottom: 28 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <History size={16} style={{ color: '#3b82f6' }} />
-              <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, color: '#fff' }}>Миний ирцийн бүртгэл</h3>
+        {/* ИРЦИЙН САРЫН CALENDAR — хумиад/дэлгэдэг */}
+        <div className={`schedule-att-card${attCalendarOpen ? ' open' : ''}`}>
+          <button
+            type="button"
+            className="schedule-att-head"
+            onClick={() => setAttCalendarOpen(v => !v)}
+            aria-expanded={attCalendarOpen}
+          >
+            <h3><History size={16} /> Миний ирцийн бүртгэл</h3>
+            <span className="schedule-att-head-right">
+              {monthLabel}
+              <ChevronDown size={16} className="schedule-att-chevron" />
+            </span>
+          </button>
+
+          <div className="schedule-att-body">
+            <div className="schedule-att-body-inner">
+              <div className="schedule-att-grid schedule-att-dow">
+                {DAY_NAMES_SHORT.map(d => <div key={d}>{d}</div>)}
+              </div>
+
+              <div className="schedule-att-grid">
+                {attCells.map((cell, idx) => {
+                  const dateStr = ymd(cell.date)
+                  const status = attMonthMap[dateStr]
+                  const isToday = dateStr === todayDateStr
+                  const isFuture = cell.date > new Date()
+                  const stateClass = status === 'present' ? 'present' : status === 'absent' ? 'absent' : isToday ? 'today' : ''
+                  return (
+                    <div
+                      key={idx}
+                      className={`schedule-att-cell${stateClass ? ` ${stateClass}` : ''}${!cell.inMonth ? ' out-of-month' : ''}`}
+                    >
+                      <span>{cell.date.getDate()}</span>
+                      {cell.inMonth && !isFuture && (
+                        status === 'present' ? <CheckCircle2 size={13} /> :
+                        status === 'absent' ? <XCircle size={13} /> :
+                        <span className="schedule-att-dot" />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="schedule-att-legend">
+                <span className="present">✓ Ирсэн: {presentCount}</span>
+                <span className="absent">✗ Ирээгүй: {absentCount}</span>
+              </div>
             </div>
-            <span style={{ fontWeight: 700, color: '#fff', fontSize: '0.88rem' }}>{monthLabel}</span>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginBottom: 4 }}>
-            {DAY_NAMES_SHORT.map(d => (
-              <div key={d} style={{ textAlign: 'center', fontSize: '0.68rem', fontWeight: 700, color: '#6b7280', padding: '4px 0' }}>{d}</div>
-            ))}
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
-            {attCells.map((cell, idx) => {
-              const dateStr = ymd(cell.date)
-              const status = attMonthMap[dateStr]
-              const isToday = dateStr === todayDateStr
-              const isFuture = cell.date > new Date()
-              return (
-                <div key={idx} style={{
-                  aspectRatio: '1', minHeight: 44,
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
-                  borderRadius: 8,
-                  background: status === 'present' ? 'rgba(16,185,129,0.12)' : status === 'absent' ? 'rgba(239,68,68,0.08)' : isToday ? 'rgba(59,130,246,0.08)' : 'rgba(0,0,0,0.15)',
-                  border: isToday ? '1px solid rgba(59,130,246,0.3)' : status === 'present' ? '1px solid rgba(16,185,129,0.3)' : status === 'absent' ? '1px solid rgba(239,68,68,0.2)' : '1px solid rgba(255,255,255,0.03)',
-                  opacity: cell.inMonth ? 1 : 0.2,
-                }}>
-                  <span style={{ fontSize: '0.75rem', fontWeight: isToday ? 800 : 600, color: isToday ? '#60a5fa' : cell.inMonth ? '#e5e7eb' : '#374151' }}>
-                    {cell.date.getDate()}
-                  </span>
-                  {cell.inMonth && !isFuture && (
-                    status === 'present' ? <CheckCircle2 size={13} style={{ color: '#10b981' }} /> :
-                    status === 'absent' ? <XCircle size={13} style={{ color: '#ef4444' }} /> :
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', border: '1.5px dashed rgba(255,255,255,0.15)' }} />
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          <div style={{ display: 'flex', gap: 20, marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.05)', fontSize: '0.82rem' }}>
-            <span style={{ color: '#10b981', fontWeight: 700 }}>✓ Ирсэн: {presentCount}</span>
-            <span style={{ color: '#ef4444', fontWeight: 700 }}>✗ Ирээгүй: {absentCount}</span>
           </div>
         </div>
 
         {/* ХУВААРИЙН ЖАГСААЛТ — сарын аль ч өдөрт оноогдсон бэлтгэлүүд */}
         {loading ? (
-          <p style={{ color: '#9ca3af', textAlign: 'center', padding: '40px' }}>Уншиж байна...</p>
+          <div className="loading-screen"><div className="spinner" /></div>
         ) : sortedDates.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '60px 20px', background: 'rgba(20, 27, 47, 0.2)', border: '1px dashed rgba(255,255,255,0.06)', borderRadius: '16px' }}>
-            <Calendar size={32} style={{ color: '#6b7280', marginBottom: '12px' }} />
-            <h3 style={{ color: '#fff', margin: '0 0 4px 0', fontSize: '1rem' }}>Энэ сард хуваарь оноогдоогүй байна</h3>
-            <p style={{ color: '#9ca3af', fontSize: '0.85rem', margin: 0 }}>Админ таны бэлтгэлийн өдөр, цагийг оруулахад энд харагдах болно.</p>
+          <div className="schedule-empty">
+            <Calendar size={32} />
+            <h3>Энэ сард хуваарь оноогдоогүй байна</h3>
+            <p>Админ таны бэлтгэлийн өдөр, цагийг оруулахад энд харагдах болно.</p>
           </div>
         ) : (
-          <div className="schedule-grid" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {sortedDates.map(dateStr => {
+          <div className="schedule-day-list">
+            {sortedDates.map((dateStr, dateIdx) => {
               const daySlots = assignmentsByDate[dateStr]
+              const isOpen = openDates.has(dateStr)
               return (
-                <div key={dateStr} style={{ background: 'rgba(20, 27, 47, 0.45)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '18px' }}>
-                  <h3 style={{ margin: '0 0 14px 0', fontSize: '0.95rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ width: '4px', height: '14px', background: '#3b82f6', borderRadius: '4px' }}></span>
-                    {displayDate(dateStr)} · {dowFullLabel(dateStr)}
-                  </h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
-                    {daySlots.map(slot => {
-                      const cfg = TYPE_CONFIG[slot.type] || TYPE_CONFIG.practice
-                      const programName = slot.program_id ? programNames[slot.program_id] : undefined
-                      return (
-                        <div key={slot.id} style={{ borderLeft: `4px solid ${cfg.color}`, background: cfg.bg, padding: '14px', borderRadius: '4px 10px 10px 4px', borderTop: '1px solid rgba(255,255,255,0.02)', borderRight: '1px solid rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: 6 }}>
-                            <span style={{ color: cfg.color, fontWeight: 700, fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{cfg.label}</span>
-                            {programName && (
-                              <span style={{ color: '#c084fc', background: 'rgba(168,85,247,0.12)', padding: '2px 8px', borderRadius: 7, fontSize: '0.72rem', fontWeight: 700 }}>{programName}</span>
-                            )}
-                          </div>
-                          {slot.type !== 'rest' && (
-                            <>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fff', fontSize: '0.88rem', marginBottom: '6px', fontWeight: 500 }}>
-                                <Clock size={13} style={{ color: '#9ca3af' }} /> {slot.start_time} – {slot.end_time}
+                <div
+                  key={dateStr}
+                  className={`schedule-day-group${isOpen ? ' open' : ''}`}
+                  style={{ animationDelay: `${dateIdx * 60}ms` }}
+                >
+                  <button
+                    type="button"
+                    className="schedule-day-title"
+                    onClick={() => toggleDate(dateStr)}
+                    aria-expanded={isOpen}
+                  >
+                    <span className="schedule-day-bar" />
+                    <span className="schedule-day-label">{displayDate(dateStr)} · {dowFullLabel(dateStr)}</span>
+                    <span className="schedule-day-count">{daySlots.length}</span>
+                    <ChevronDown size={16} className="schedule-day-chevron" />
+                  </button>
+                  <div className="schedule-day-body">
+                    <div className="schedule-day-body-inner">
+                      <div className="schedule-session-grid">
+                        {daySlots.map(slot => {
+                          const cfg = TYPE_CONFIG[slot.type] || TYPE_CONFIG.practice
+                          const programName = slot.program_id ? programNames[slot.program_id] : undefined
+                          return (
+                            <div key={slot.id} className="schedule-session-card" style={{ ['--accent' as any]: cfg.color, ['--accent-rgb' as any]: hexToRgbTriplet(cfg.color) }}>
+                              <div className="schedule-session-head">
+                                <span className="schedule-session-type">{cfg.label}</span>
+                                {programName && <span className="schedule-session-program">{programName}</span>}
                               </div>
-                              {slot.location && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#9ca3af', fontSize: '0.82rem', marginBottom: '8px' }}>
-                                  <MapPin size={13} /> {slot.location}
-                                </div>
+                              {slot.type !== 'rest' && (
+                                <>
+                                  <div className="schedule-session-time"><Clock size={13} /> {slot.start_time} – {slot.end_time}</div>
+                                  {slot.location && <div className="schedule-session-location"><MapPin size={13} /> {slot.location}</div>}
+                                </>
                               )}
-                            </>
-                          )}
-                          {slot.notes && <p style={{ margin: 0, padding: '6px 8px', background: 'rgba(0,0,0,0.15)', borderRadius: '6px', fontSize: '0.8rem', color: '#d1d5db', borderLeft: '2px solid rgba(255,255,255,0.1)' }}>{slot.notes}</p>}
-                        </div>
-                      )
-                    })}
+                              {slot.notes && <p className="schedule-session-notes">{slot.notes}</p>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )

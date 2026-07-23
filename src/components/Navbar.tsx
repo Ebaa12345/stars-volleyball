@@ -68,35 +68,76 @@ export default function Navbar() {
           )}
         </div>
 
-        <button className="hamburger" onClick={() => setOpen(!open)}>
-          {open ? <X size={24} /> : <Menu size={24} />}
+        <button
+          className={`hamburger${open ? ' open' : ''}`}
+          onClick={() => setOpen(!open)}
+          aria-label={open ? 'Цэс хаах' : 'Цэс нээх'}
+          aria-expanded={open}
+        >
+          <span className="hamburger-icon">
+            <Menu size={24} className="icon-menu" />
+            <X size={24} className="icon-close" />
+          </span>
         </button>
       </div>
 
-      {open && (
+      {/* Үргэлж DOM-д байдаг (зөвхөн "open" класс нь grid-template-rows-ийг
+          сольдог) — эс тэгвээс React {open && ...} шиг шууд mount/unmount
+          хийвэл хаагдах үеийн animation ажиллах боломжгүй байсан. */}
+      <div className={`mobile-menu-wrap${open ? ' open' : ''}`}>
         <div className="mobile-menu">
-          {navLinks.map(link => (
-            <Link key={link.to} to={link.to} className="mobile-link" onClick={() => setOpen(false)}>
-              {link.label}
-            </Link>
-          ))}
-          <div className="mobile-divider" />
-          {user ? (
-            <>
-              <Link to={isAdmin ? '/admin' : '/schedule'} className="mobile-link" onClick={() => setOpen(false)}>
-                {isAdmin ? 'Admin' : 'Хуваарь'}
+          <div className="mobile-menu-inner">
+            {navLinks.map((link, i) => (
+              <Link
+                key={link.to}
+                to={link.to}
+                className="mobile-link"
+                style={{ transitionDelay: open ? `${i * 40}ms` : '0ms' }}
+                onClick={() => setOpen(false)}
+              >
+                {link.label}
               </Link>
-              <Link to="/report" className="mobile-link" onClick={() => setOpen(false)}>Тайлан</Link>
-              <button onClick={() => { signOut(); setOpen(false) }} className="mobile-link logout">Гарах</button>
-            </>
-          ) : (
-            <>
-              <Link to="/login" className="mobile-link highlight" onClick={() => setOpen(false)}>Нэвтрэх</Link>
-              
-            </>
-          )}
+            ))}
+            <div className="mobile-divider" />
+            {user ? (
+              <>
+                <Link
+                  to={isAdmin ? '/admin' : '/schedule'}
+                  className="mobile-link"
+                  style={{ transitionDelay: open ? `${navLinks.length * 40}ms` : '0ms' }}
+                  onClick={() => setOpen(false)}
+                >
+                  {isAdmin ? 'Admin' : 'Хуваарь'}
+                </Link>
+                <Link
+                  to="/report"
+                  className="mobile-link"
+                  style={{ transitionDelay: open ? `${(navLinks.length + 1) * 40}ms` : '0ms' }}
+                  onClick={() => setOpen(false)}
+                >
+                  Тайлан
+                </Link>
+                <button
+                  onClick={() => { signOut(); setOpen(false) }}
+                  className="mobile-link logout"
+                  style={{ transitionDelay: open ? `${(navLinks.length + 2) * 40}ms` : '0ms' }}
+                >
+                  Гарах
+                </button>
+              </>
+            ) : (
+              <Link
+                to="/login"
+                className="mobile-link highlight"
+                style={{ transitionDelay: open ? `${navLinks.length * 40}ms` : '0ms' }}
+                onClick={() => setOpen(false)}
+              >
+                Нэвтрэх
+              </Link>
+            )}
+          </div>
         </div>
-      )}
+      </div>
     </nav>
   )
 }
