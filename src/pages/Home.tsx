@@ -1,20 +1,23 @@
 import { Link } from 'react-router-dom'
+import { createPortal } from 'react-dom'
 import { useAuth } from '../hooks/useAuth'
 import { Trophy, Users, Calendar, ChevronRight, GraduationCap, Stars, Medal } from 'lucide-react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 
 // 1. Mikasa Шар+Цэнхэр өнгөтэй 3D Бөмбөг (Хэмжээг чүүд чүүд жижигсгэсэн)
-function VolleyballBall() {
+function VolleyballBall({ spinBoostRef }: { spinBoostRef?: React.MutableRefObject<number> }) {
   const meshRef = useRef<THREE.Mesh>(null)
 
   useFrame(() => {
     if (meshRef.current) {
-      meshRef.current.rotation.y += 0.003 // Ард аажуухан гоё эргэнэ
-      meshRef.current.rotation.x += 0.001
+      const boost = spinBoostRef?.current ?? 0
+      meshRef.current.rotation.y += 0.003 + boost // Ард аажуухан гоё эргэнэ, scroll хийхэд түргэсэж "гүйнэ"
+      meshRef.current.rotation.x += 0.001 + boost * 0.4
     }
+    if (spinBoostRef) spinBoostRef.current *= 0.9 // Түлхэлт аажим намдана
   })
 
   return (
@@ -53,16 +56,98 @@ function VolleyballBall() {
 }
 
 // 3D Scene - Одоо өргөн нь бүтэн дэлгэцээр арын фон болж ажиллана
-function VolleyballScene() {
+function VolleyballScene({ spinBoostRef }: { spinBoostRef?: React.MutableRefObject<number> }) {
   return (
     <div style={{ width: '100%', height: '100%', cursor: 'grab' }}>
       <Canvas camera={{ position: [0, 0, 5], fov: 45 }}>
         <ambientLight intensity={0.8} />
         <directionalLight position={[5, 5, 4]} intensity={1.5} />
-        <VolleyballBall />
+        <VolleyballBall spinBoostRef={spinBoostRef} />
         <OrbitControls enableZoom={false} />
       </Canvas>
     </div>
+  )
+}
+
+// Hero-гийн ард байрлах том бөмбөг бичгийг далдлахгүйн тулд хөдөлгөөнгүй
+// хэвээр үлдэнэ. Харин hero бүрэн scroll-оор өнгөрсний дараа (текст дэлгэц
+// дээрээс гарсны дараа) баруун захад бяцхан бөмбөг гарч ирээд доошоо
+// "гүйж" хуудасны төгсгөлд хамтрагч болон зогсоно. PageTransition wrapper
+// CSS transform ашигладаг тул position:fixed элемент viewport бус тэр
+// wrapper-т наалддаг — иймд body руу шууд portal хийнэ.
+function RunningVolleyball({ heroRef }: { heroRef: React.RefObject<HTMLElement> }) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const spinBoostRef = useRef(0)
+  const heroHeightRef = useRef(1)
+  const lastYRef = useRef(0)
+
+  useEffect(() => {
+    lastYRef.current = window.scrollY
+
+    const measure = () => {
+      const hero = heroRef.current
+      if (hero) heroHeightRef.current = hero.offsetHeight
+    }
+
+    let ticking = false
+    const update = () => {
+      ticking = false
+      const el = wrapRef.current
+      if (!el) return
+
+      const scrollY = window.scrollY
+      const delta = scrollY - lastYRef.current
+      lastYRef.current = scrollY
+      spinBoostRef.current += Math.abs(delta) * 0.0006
+
+      // Hero-г бүрэн өнгөрсний дараа (текст дэлгэцнээс гарсны дараа) л
+      // тоглогдоно — тиймээс огт бичиг рүү давхцахгүй.
+      const travelStart = heroHeightRef.current
+      const travelSpan = 520
+      const t = Math.min(Math.max((scrollY - travelStart) / travelSpan, 0), 1)
+      const appearing = scrollY > travelStart
+
+      const startSize = 170
+      const endSize = 110
+      const size = startSize + (endSize - startSize) * t
+
+      const centerX = window.innerWidth - 90
+      const startCenterY = 110
+      const endCenterY = window.innerHeight - 100
+      const centerY = startCenterY + (endCenterY - startCenterY) * t
+
+      el.style.width = `${size}px`
+      el.style.height = `${size}px`
+      el.style.transform = `translate3d(${centerX - size / 2}px, ${centerY - size / 2}px, 0)`
+      el.style.opacity = appearing ? '1' : '0'
+    }
+
+    const onScroll = () => {
+      if (!ticking) {
+        ticking = true
+        requestAnimationFrame(update)
+      }
+    }
+    const onResize = () => {
+      measure()
+      update()
+    }
+
+    measure()
+    update()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onResize)
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onResize)
+    }
+  }, [heroRef])
+
+  return createPortal(
+    <div ref={wrapRef} className="running-ball-wrap">
+      <VolleyballScene spinBoostRef={spinBoostRef} />
+    </div>,
+    document.body
   )
 }
 
@@ -75,6 +160,7 @@ function hexToRgbTriplet(hex: string) {
 
 export default function Home() {
   const { user, isAdmin } = useAuth()
+  const heroRef = useRef<HTMLElement>(null)
 
   // Stat картан бүрд өөрийн өнгө (glassmorphism icon glow-д ашиглана)
   const stats = [
@@ -86,14 +172,16 @@ export default function Home() {
 
   return (
     <div className="page-home">
+      <RunningVolleyball heroRef={heroRef} />
+
       {/* Hero Section */}
-      <section className="hero">
+      <section className="hero" ref={heroRef}>
         {/* 1. Арын дэвсгэр өнгө ба тор */}
         <div className="hero-bg">
           <div className="hero-net" />
         </div>
 
-        {/* 2. ЯГ БИЧГИЙН АРД БАЙРЛАХ 3D БӨМБӨГ */}
+        {/* 2. ЯГ БИЧГИЙН АРД БАЙРЛАХ 3D БӨМБӨГ (хөдөлгөөнгүй — бичгийг далдлахгүй) */}
         <div className="hero-3d-bg">
           <VolleyballScene />
         </div>

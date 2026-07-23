@@ -1,5 +1,41 @@
-import { useState } from 'react'
-import { Info, Target, BookOpen, ChevronDown } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Info, Target, BookOpen, ChevronDown, CalendarDays, Users, GraduationCap, Sparkles } from 'lucide-react'
+
+// Элемент дэлгэц рүү scroll орж ирэхэд нэг л удаа "in-view" класс нэмж,
+// CSS transition-оор гулсаж/тодрох animation өдөөнө.
+function useRevealOnScroll(count: number) {
+  const refs = useRef<(HTMLDivElement | null)[]>([])
+  const [visible, setVisible] = useState<boolean[]>(() => Array(count).fill(false))
+
+  useEffect(() => {
+    const nodes = refs.current
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (!entry.isIntersecting) return
+          const idx = nodes.indexOf(entry.target as HTMLDivElement)
+          if (idx === -1) return
+          setVisible(prev => (prev[idx] ? prev : prev.map((v, i) => (i === idx ? true : v))))
+          observer.unobserve(entry.target)
+        })
+      },
+      { threshold: 0.15, rootMargin: '0px 0px -60px 0px' }
+    )
+
+    nodes.forEach(el => el && observer.observe(el))
+    return () => observer.disconnect()
+  }, [count])
+
+  return { refs, visible }
+}
+
+// Гарчгийн доорх товч тоон мэдээлэл — клубыг нэг харцаар танилцуулна
+const HIGHLIGHTS = [
+  { icon: CalendarDays, value: '2024', label: 'Байгуулагдсан' },
+  { icon: Users, value: '100+', label: 'Гишүүд' },
+  { icon: GraduationCap, value: '3', label: 'Дасгалжуулагч' },
+  { icon: Sparkles, value: '8–17', label: 'Насны ангилал' },
+]
 
 // Хэсэг бүрийг эндээс засна — гарчиг дээр дарахад доод текст нь
 // нээгдэж/хаагдана (accordion).
@@ -56,8 +92,12 @@ export default function About() {
     setOpenId(prev => (prev === id ? null : id))
   }
 
+  const highlightReveal = useRevealOnScroll(HIGHLIGHTS.length)
+  const timelineReveal = useRevealOnScroll(SECTIONS.length)
+
   return (
-    <div className="page">
+    <div className="page about-page">
+      <div className="about-glow" aria-hidden="true" />
       <div className="container">
         <div className="page-header">
           <span className="eyebrow">Бидний тухай</span>
@@ -65,46 +105,59 @@ export default function About() {
           <p>2024 оноос хойш Монголын волейболын хөгжилд хувь нэмрээ оруулж ирлээ.</p>
         </div>
 
-        <div className="about-accordion">
-          {SECTIONS.map(({ id, icon: Icon, title, body }) => {
+        <div className="about-highlights">
+          {HIGHLIGHTS.map(({ icon: Icon, value, label }, i) => (
+            <div
+              key={label}
+              ref={el => { highlightReveal.refs.current[i] = el }}
+              className={`about-highlight-card${highlightReveal.visible[i] ? ' in-view' : ''}`}
+              style={{ transitionDelay: `${i * 70}ms` }}
+            >
+              <Icon size={20} />
+              <div>
+                <strong>{value}</strong>
+                <span>{label}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="about-timeline">
+          {SECTIONS.map(({ id, icon: Icon, title, body }, i) => {
             const isOpen = openId === id
+            const isVisible = timelineReveal.visible[i]
             return (
-              <div key={id} className={`about-accordion-item${isOpen ? ' open' : ''}`}>
-                <button
-                  className="about-accordion-header"
-                  onClick={() => toggle(id)}
-                  aria-expanded={isOpen}
-                >
-                  <span className="about-accordion-icon"><Icon size={18} /></span>
-                  <span className="about-accordion-title">{title}</span>
-                  <span className="about-accordion-chevron"><ChevronDown size={18} /></span>
-                </button>
-                <div className="about-accordion-body">
-                  <div className="about-accordion-body-inner">
-                    <p>{body}</p>
+              <div
+                key={id}
+                ref={el => { timelineReveal.refs.current[i] = el }}
+                className={`about-timeline-item${isOpen ? ' open' : ''}${isVisible ? ' in-view' : ''}`}
+                style={{ transitionDelay: `${i * 110}ms` }}
+              >
+                <div className="about-timeline-marker">
+                  <span className="about-timeline-icon">
+                    <Icon size={18} />
+                    <span className="about-timeline-index">{String(i + 1).padStart(2, '0')}</span>
+                  </span>
+                </div>
+                <div className="about-timeline-card">
+                  <button
+                    className="about-timeline-header"
+                    onClick={() => toggle(id)}
+                    aria-expanded={isOpen}
+                  >
+                    <span className="about-timeline-title">{title}</span>
+                    <span className="about-timeline-chevron"><ChevronDown size={18} /></span>
+                  </button>
+                  <div className="about-timeline-body">
+                    <div className="about-timeline-body-inner">
+                      <p>{body}</p>
+                    </div>
                   </div>
                 </div>
               </div>
             )
           })}
         </div>
-
-        {/* Клубын түүхэн амжилтууд — идэвхжүүлэхийн тулд доорх блокийг
-            тайлбараас гаргаад, бодит датагаараа солиорой. .about-highlights /
-            .highlight-item классууд таны CSS-д аль хэдийн бий. */}
-        {/*
-        <div className="about-highlights" style={{ maxWidth: 780, margin: '32px auto 0' }}>
-          {[
-            { year: '2024', text: 'Клуб үүсгэн байгуулагдсан' },
-            { year: '2025', text: 'Аймгийн чемпионат — 1-р байр' },
-          ].map(h => (
-            <div key={h.year} className="highlight-item">
-              <span className="highlight-year">{h.year}</span>
-              <span className="highlight-text">{h.text}</span>
-            </div>
-          ))}
-        </div>
-        */}
       </div>
     </div>
   )

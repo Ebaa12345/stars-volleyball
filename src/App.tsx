@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import Navbar from './components/Navbar'
+import Footer from './components/Footer'
 import PageTransition from './components/PageTransition'
 import Home from './pages/Home'
 import About from './pages/About'
@@ -46,11 +47,7 @@ function AppRoutes() {
         </Routes>
         </PageTransition>
       </div>
-      <footer className="footer">
-        <div className="container">
-          <span></span>
-        </div>
-      </footer>
+      <Footer />
     </BrowserRouter>
   )
 }

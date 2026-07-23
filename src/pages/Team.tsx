@@ -1,17 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase, Profile } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { Shield, User, Users, Plus, X } from 'lucide-react'
-
-// Позицид зориулсан өнгөнүүд
-const POSITION_COLORS: Record<string, string> = {
-  'Libero': '#f59e0b',
-  'Setter': '#3b82f6',
-  'Outside Hitter': '#10b981',
-  'Middle Blocker': '#8b5cf6',
-  'Opposite': '#ef4444',
-}
-const DEFAULT_POSITION_COLOR = '#6b7280'
+import { User, Users, Plus, X } from 'lucide-react'
 
 export default function Team() {
   // Гараар засдаг байсан STATIC_TEAM-г Supabase-с шууд татахаар сольсон.
@@ -21,7 +11,6 @@ export default function Team() {
   const { isAdmin } = useAuth()
   const [team, setTeam] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeFilter, setActiveFilter] = useState('All Players')
 
   // Дасгалжуулагч нэмэх inline panel
   const [showAddCoach, setShowAddCoach] = useState(false)
@@ -43,14 +32,6 @@ export default function Team() {
   // Ангилал салгах логик
   const coaches = team.filter(m => m.role === 'coach')
   const players = team.filter(m => m.role !== 'coach')
-
-  // Тоглогчдыг шүүх хэсэг
-  const filteredPlayers = activeFilter === 'All Players'
-    ? players
-    : players.filter(p => p.position === activeFilter)
-
-  // Зөвхөн тоглогчдын байрлалыг шүүлтүүрт гаргах
-  const filterTabs = ['All Players', ...Array.from(new Set(players.map(p => p.position).filter(Boolean) as string[]))]
 
   // ── Admin: бүртгэлтэй хэрэглэгчийг дасгалжуулагч болгож нэмэх ──
   async function addCoach() {
@@ -84,7 +65,8 @@ export default function Team() {
   }
 
   return (
-    <div className="page">
+    <div className="page team-page">
+      <div className="team-glow" aria-hidden="true" />
       <div className="container">
 
         {/* Толгой хэсэг */}
@@ -197,7 +179,6 @@ export default function Team() {
                 )}
               </div>
             )}
-
 
           </div>
         )}

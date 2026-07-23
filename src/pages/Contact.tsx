@@ -72,7 +72,8 @@ export default function Contact() {
   ]
 
   return (
-    <div className="page">
+    <div className="page contact-page">
+      <div className="contact-glow" aria-hidden="true" />
       <div className="container">
         <div className="page-header">
           <span className="eyebrow">Холбоо барих</span>
